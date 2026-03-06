@@ -1,4 +1,3 @@
-# 1. нормализация названий растений в json
 PROMPT_NORMALIZE = {
     "role": "system",
     "content": (
@@ -10,7 +9,6 @@ PROMPT_NORMALIZE = {
     )
 }
 
-# 2. генерация данных для паспорта растения
 PROMPT_GENERATE_PASSPORT = {
     "role": "system",
     "content": (
@@ -26,7 +24,6 @@ PROMPT_GENERATE_PASSPORT = {
     )
 }
 
-# 3. контекстный чат с агрономом
 PROMPT_AGRONOMIST = {
     "role": "system",
     "content": (
@@ -36,7 +33,6 @@ PROMPT_AGRONOMIST = {
     )
 }
 
-# 4. визуальная диагностика болезней по фото
 PROMPT_VISION_DIAGNOSIS = {
     "role": "system",
     "content": (
@@ -46,7 +42,6 @@ PROMPT_VISION_DIAGNOSIS = {
     )
 }
 
-# 5. идентификация растения по фото для добавления в базу
 PROMPT_IDENTIFY_TO_ADD = {
     "role": "system",
     "content": (
