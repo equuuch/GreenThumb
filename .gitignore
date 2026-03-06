@@ -10,16 +10,29 @@ include/
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
+.mypy_cache/
 
-# секреты
+# секреты (игнорируем все вариации env файлов)
 .env
+.env.*
+!.env.example
 
+# база данных
 *.db
 *.sqlite3
+*.db-journal
 
 # медиа файлы пользователей
 assets/uploads/*
 !assets/uploads/.gitkeep
+
+# специфичные файлы flet и сборки
+dist/
+build/
+__flet_build__/
+*.apk
+*.exe
 
 # системные файлы и логи
 *.log
