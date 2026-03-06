@@ -1,0 +1,29 @@
+# виртуальное окружение
+venv/
+.venv/
+env/
+bin/
+lib/
+include/
+
+# кэш питона
+__pycache__/
+*.py[cod]
+*$py.class
+
+# секреты
+.env
+
+*.db
+*.sqlite3
+
+# медиа файлы пользователей
+assets/uploads/*
+!assets/uploads/.gitkeep
+
+# системные файлы и логи
+*.log
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
