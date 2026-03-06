@@ -9,22 +9,34 @@ class Config:
     # авторизационные данные для oauth (base64)
     GIGA_CREDS = os.getenv("GIGACHAT_CREDENTIALS")
     
-    # область доступа 
+    # идентификатор клиента для заголовков x-client-id
+    GIGA_CLIENT_ID = os.getenv("GIGACHAT_CLIENT_ID")
+    
+    # область доступа (физлица по умолчанию)
     GIGA_SCOPE = os.getenv("GIGACHAT_SCOPE", "GIGACHAT_API_PERS")
 
+    # базовая модель для текстовых ответов
     GIGA_MODEL_LITE = os.getenv("GIGACHAT_MODEL_LITE", "GigaChat")
 
+    # мощная модель для работы с фото
     GIGA_MODEL_MAX = os.getenv("GIGACHAT_MODEL_MAX", "GigaChat-Max")
 
     # бд секретики
-    # путь к файлу базы данных
+    # полный путь к базе данных sqlite
     DB_URL = os.getenv("DATABASE_URL", "sqlite:///greenthumb.db")
     
-    # логирование запросов к базе
+    # включение вывода sql запросов в консоль
     DB_ECHO = os.getenv("DB_ECHO", "False").lower() == "true"
     
-    # ключ для шифрования данных
-    SECRET_KEY = os.getenv("SECRET_KEY", "your_very_secret_key_here")
+    # секретный ключ для защиты данных
+    SECRET_KEY = os.getenv("SECRET_KEY", "gt_secret_fallback_777")
 
-    # директория для локального сохранения изображений
+    # медиа и оптимизация
+    # корневая папка для сохранения всех загрузок
     UPLOAD_DIR = os.path.join("assets", "uploads")
+
+    # максимальный размер стороны фото в пикселях для pillow
+    IMAGE_MAX_SIZE = 1024
+
+    # качество сжатия для экономии токенов и места
+    IMAGE_QUALITY = 75
