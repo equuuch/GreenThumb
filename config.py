@@ -25,3 +25,6 @@ class Config:
     
     # ключ для шифрования данных
     SECRET_KEY = os.getenv("SECRET_KEY", "your_very_secret_key_here")
+
+    # директория для локального сохранения изображений
+    UPLOAD_DIR = os.path.join("assets", "uploads")
