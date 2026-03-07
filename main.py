@@ -1,75 +1,60 @@
 import flet as ft
-from components.nav_bar import NavBar
-
-# Импорт экранов
 from views.home_view import HomeView
+from views.user_home_view import UserHomeView
 from views.my_plants_view import MyPlantsView
-from views.catalog_view import CatalogView
-from views.profile_view import ProfileView
-from views.auth_view import AuthView
-from views.notify_view import NotificationsView
-from views.add_plant_view import AddPlantView
 from views.details_view import DetailsView
-
-BG_COLOR = "#F9F9F9"
-
-@ft.component
-def App():
-    route, set_route = ft.use_state(ft.context.page.route or "/")
-    tab_index, set_tab_index = ft.use_state(0)
-
-    def handle_route_change(e):
-        set_route(e.route)
-        if e.route == "/": set_tab_index(0)
-        elif e.route == "/my_plants": set_tab_index(1)
-        elif e.route == "/catalog": set_tab_index(2)
-        elif e.route == "/profile": set_tab_index(3)
-
-    ft.context.page.on_route_change = handle_route_change
-
-    def on_nav_change(e):
-        index = e.control.selected_index
-        set_tab_index(index)
-        if index == 0: ft.context.page.go("/")
-        elif index == 1: ft.context.page.go("/my_plants")
-        elif index == 2: ft.context.page.go("/catalog")
-        elif index == 3: ft.context.page.go("/profile")
-
-    def get_content():
-        if route == "/": return HomeView()
-        if route == "/my_plants": return MyPlantsView()
-        if route == "/catalog": return CatalogView()
-        if route == "/profile": return ProfileView()
-        if route == "/auth": return AuthView()
-        if route == "/notifications": return NotificationsView()
-        if route == "/add_plant": return AddPlantView()
-        if route == "/details": return DetailsView()
-        return ft.Text(f"Страница {route} не найдена", color="black")
-
-    view = ft.View(route=route)
-    view.bgcolor = BG_COLOR
-    view.padding = 0
-    
-    if route in ["/", "/my_plants", "/catalog", "/profile"]:
-        view.navigation_bar = NavBar(
-            selected_index=tab_index, 
-            on_change_callback=on_nav_change
-        )
-    
-    view.controls.append(ft.Container(content=get_content(), expand=True))
-    return view
+from views.auth_view import AuthView
+from components.nav_bar import NavBar
 
 def main(page: ft.Page):
     page.title = "GreenThumb"
-    # Оставляем только базовые цвета, которые точно не упадут
-    page.theme = ft.Theme(
-        color_scheme=ft.ColorScheme(
-            primary="white",      # Цвет текста активной вкладки
-            secondary="#009753"   # Цвет кружка (индикатора)
-        )
-    )
-    page.bgcolor = BG_COLOR
-    page.render_views(App)
+    page.theme_mode = ft.ThemeMode.LIGHT
+    page.bgcolor = "#F9F9F9"
+    page.padding = 0
+
+    # 1. РОУТЕР
+    def router(route):
+        page.route = route
+        render_view(None)
+
+    # 2. ПЕРЕХОДНИК МЕНЮ
+    def on_nav_change(index):
+        home_route = "/user_home" if page.route == "/user_home" else "/"
+        routes = [home_route, "/my_plants", "/details", "/profile"]
+        router(routes[index])
+
+    # 3. ЛОГИКА ОТРИСОВКИ
+    def render_view(e):
+        page.views.clear()
+        
+        nav_map = {
+            "/": 0, "/user_home": 0, 
+            "/my_plants": 1, "/details": 2, "/profile": 3
+        }
+        current_index = nav_map.get(page.route, 0)
+
+        if page.route == "/auth":
+            view = AuthView(page)
+        elif page.route == "/user_home":
+            view = UserHomeView(page)
+        elif page.route == "/my_plants":
+            view = MyPlantsView(page)
+        elif page.route == "/details":
+            view = DetailsView(page)
+        elif page.route == "/profile":
+            view = ft.View(route="/profile", controls=[ft.Text("Профиль", size=30, color="black")], bgcolor="#F9F9F9")
+        else:
+            view = HomeView(page)
+        
+        if page.route not in ["/", "/auth"]:
+            view.bottom_appbar = NavBar(current_index, on_nav_change)
+        
+        page.views.append(view)
+        page.update()
+
+    page.go = router 
+    router("/")
 
 if __name__ == "__main__":
-    ft.run(main)
+    # ВАЖНО: Добавили assets_dir="assets"
+    ft.app(target=main, assets_dir="assets")
