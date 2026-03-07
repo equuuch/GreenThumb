@@ -73,15 +73,15 @@ def run_tests():
     # 6. тест генерации pdf отчета
     print("\n[5] тест генерации отчета...")
     if item and new_plant:
-        # сбор нормализованных данных через report_service
         data = ReportService.collect_plant_data(db, new_plant.plant_id)
         if data:
-            # создание физического файла через export_service
             pdf_path = ExportService.create_plant_pdf(data)
+            # проверяем существование файла по физическому пути
             if pdf_path and os.path.exists(pdf_path):
                 print(f"pdf отчет успешно создан: {pdf_path}")
+                # для фронтенда путь будет выглядеть иначе (через assets)
             else:
-                print("Ошибка генерации pdf. Проверьте наличие шрифтов.")
+                print(f"Ошибка: файл не найден по пути {pdf_path}")
         else:
             print("Ошибка сбора данных для отчета.")
 

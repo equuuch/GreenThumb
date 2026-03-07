@@ -20,7 +20,7 @@ class TokenUsage(Base):
     token_usage_id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
     tokens_count = Column(Integer)
-    request_type = Column(String) # normalize, passport, diagnosis и т.д.
+    request_type = Column(String) # тип запроса для аналитики расходов
     created_at = Column(DateTime, server_default=func.now())
 
     user = relationship("User", back_populates="token_usages")
@@ -61,6 +61,7 @@ class Plant(Base):
     catalog_info = relationship("PlantCatalog", back_populates="plants_instances")
     growth_logs = relationship("GrowthLog", back_populates="plant", cascade="all, delete")
     calendar_tasks = relationship("CareCalendar", back_populates="plant", cascade="all, delete")
+    consultations = relationship("AIConsultation", back_populates="plant", cascade="all, delete")
 
 class CareCalendar(Base):
     __tablename__ = "care_calendar"
@@ -78,8 +79,8 @@ class GrowthLog(Base):
     log_id = Column(Integer, primary_key=True, autoincrement=True)
     plant_id = Column(Integer, ForeignKey("plants.plant_id", ondelete="CASCADE"), nullable=False)
     height = Column(Numeric, nullable=False)
-    note = Column(Text) # заметка
-    image_path = Column(String) 
+    note = Column(Text) # заметка пользователя о состоянии растения
+    image_path = Column(String) # относительный путь к фото прогресса
     measured_at = Column(Date, server_default=func.current_date())
 
     plant = relationship("Plant", back_populates="growth_logs")
@@ -91,7 +92,8 @@ class AIConsultation(Base):
     plant_id = Column(Integer, ForeignKey("plants.plant_id", ondelete="CASCADE"), nullable=True)
     prompt_text = Column(Text, nullable=False)
     response_text = Column(Text, nullable=False)
-    consultation_type = Column(String) # тип запроса для аналитики
+    consultation_type = Column(String) # тип запроса для статистики
     created_at = Column(DateTime, server_default=func.now())
 
     user = relationship("User", back_populates="consultations")
+    plant = relationship("Plant", back_populates="consultations")

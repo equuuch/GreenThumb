@@ -2,6 +2,8 @@ import requests
 import uuid
 import time
 import json
+import io
+from PIL import Image
 from config import Config
 from database.models import AIConsultation, TokenUsage
 from sqlalchemy.orm import Session
@@ -9,7 +11,7 @@ from .prompts import *
 
 class GigaChatService:
     def __init__(self):
-        # настройки из курьера (config.py)
+        # настройки из центрального курьера
         self.auth_key = Config.GIGA_CREDS
         self.client_id = Config.GIGA_CLIENT_ID
         self.scope = Config.GIGA_SCOPE
@@ -20,10 +22,9 @@ class GigaChatService:
         self.base_url = "https://gigachat.devices.sberbank.ru/api/v1"
 
     def _update_token(self):
-        # обновление jwt токена доступа
-        # токен живет 30 минут делаем интервал в минуту чтобы 
-        # не было обрывов при передаче больших изображений 
-        # (хотя в идеале быть не должно тк пиллоу)
+        # обновление jwt токена доступа. 
+        # токен живет 30 минут, мы используем защитный интервал в 60 секунд, 
+        # чтобы гарантировать стабильность соединения при передаче данных.
         if time.time() < self.token_expires:
             return
             
@@ -42,12 +43,30 @@ class GigaChatService:
             self.access_token = data['access_token']
             self.token_expires = (data['expires_at'] / 1000) - 60
         except Exception as e:
-            print(f"Ошибка обновления токена: {e}")
+            print(f"ошибка обновления токена: {e}")
+
+    def _optimize_for_ai(self, image_bytes: bytes) -> bytes:
+        # сжатие изображения в оперативной памяти перед отправкой в ии. 
+        # процесс включает конвертацию в rgb для удаления альфа-каналов, 
+        # пропорциональный ресайз до лимитов из конфига и сохранение в jpeg. 
+        # это критически важно для экономии токенов и ускорения ответа vision-модели.
+        try:
+            img = Image.open(io.BytesIO(image_bytes))
+            if img.mode in ("RGBA", "P"):
+                img = img.convert("RGB")
+            
+            img.thumbnail((Config.IMAGE_MAX_SIZE, Config.IMAGE_MAX_SIZE), Image.Resampling.LANCZOS)
+            
+            output = io.BytesIO()
+            img.save(output, format="JPEG", quality=70)
+            return output.getvalue()
+        except:
+            return image_bytes
 
     def upload_image(self, image_bytes):
-        # загрузка фотографии в хранилище сбера. 
-        # для анализа фото (vision) необходимо сначала отправить файл 
-        # и получить его идентификатор, который затем передается в массив attachments.
+        # загрузка фотографии во временное хранилище сбера. 
+        # для vision-анализа необходимо сначала получить идентификатор файла, 
+        # который затем прикрепляется к основному запросу генерации.
         self._update_token()
         if not self.access_token: return None
 
@@ -62,21 +81,19 @@ class GigaChatService:
             res = requests.post(f"{self.base_url}/files", headers=headers, files=files, verify=False)
             return res.json().get('id')
         except Exception as e:
-            print(f"Ошибка загрузки фото: {e}")
+            print(f"ошибка загрузки фото: {e}")
             return None
 
     def get_ai_response(self, db: Session, user_id: int, system_prompt, user_text, use_max=False, attachments=None, p_type="chat"):
-        # универсальный метод получения ответа от ии. 
-        # включает автоматическую регулировку температуры (0.1 для json-промптов), 
-        # очистку от markdown-разметки и обязательную запись в базу данных 
-        # информации о потраченных токенах и сути консультации
+        # универсальный метод получения ответа от модели. 
+        # объединяет логику выбора модели (lite/max), автоматическую настройку 
+        # температуры для json-промптов и обязательное логирование истории 
+        # консультаций и расхода токенов в базу данных.
         self._update_token()
         if not self.access_token:
             return None, "Ошибка авторизации сервиса ИИ."
 
         model = self.model_max if use_max else self.model_lite
-        
-        # определяем режим json по содержанию промпта 
         is_json = "JSON" in system_prompt.get('content', '')
         
         payload = {
@@ -102,10 +119,10 @@ class GigaChatService:
             raw_content = data['choices'][0]['message']['content']
             usage = data.get('usage', {}).get('total_tokens', 0)
 
-            # очистка json от блоков кода markdown
+            # очистка результата от markdown разметки кода
             clean_content = raw_content.replace("```json", "").replace("```", "").strip()
 
-            # атомарное логирование консультации
+            # атомарное логирование в базу данных
             consultation = AIConsultation(
                 user_id=user_id,
                 prompt_text=user_text[:300],
@@ -121,8 +138,6 @@ class GigaChatService:
             db.rollback()
             return None, f"Ошибка работы ИИ: {str(e)}."
 
-    # МЕТОДЫ ДЛЯ ФРОНТЕНДА ЕШКИН КОТ
-
     def identify_by_name(self, db: Session, user_id: int, name: str):
         # нормализация названия через PROMPT_NORMALIZE
         res, err = self.get_ai_response(db, user_id, PROMPT_NORMALIZE, name, p_type="normalize")
@@ -131,26 +146,30 @@ class GigaChatService:
         except: return None, "Некорректный формат ответа."
 
     def get_passport_data(self, db: Session, user_id: int, name: str):
-        # генерация характеристик через генератор паспорта
+        # генерация технических характеристик растения через ии
         res, err = self.get_ai_response(db, user_id, PROMPT_GENERATE_PASSPORT, f"Растение: {name}", p_type="passport")
         if err: return None, err
         try: return json.loads(res), None
         except: return None, "Не удалось сформировать паспорт."
 
-    def ask_agronomist(self, db: Session, user_id: int, plant_info: str, query: str): # --ФАСТ СОВЕТ В ЧАТЕ--
-        # быстрый совет по уходу через 
+    def ask_agronomist(self, db: Session, user_id: int, plant_info: str, query: str):
+        # быстрая консультация агронома в текстовом чате
         full_query = f"Контекст растения: {plant_info}. Вопрос: {query}"
         return self.get_ai_response(db, user_id, PROMPT_AGRONOMIST, full_query, p_type="advice")
 
-    def diagnose_plant(self, db: Session, user_id: int, img: bytes): # --ВИЗУАЛЬНАЯ ДИАГНОСТИКА БОЛЕЗНЕЙ--
-        # диагностика болезней по фото 
-        f_id = self.upload_image(img)
+    def diagnose_plant(self, db: Session, user_id: int, img: bytes):
+        # визуальная диагностика болезней по фотографии. 
+        # перед отправкой байты оптимизируются для минимизации затрат токенов.
+        opt_img = self._optimize_for_ai(img)
+        f_id = self.upload_image(opt_img)
         if not f_id: return None, "Загрузка изображения не удалась."
         return self.get_ai_response(db, user_id, PROMPT_VISION_DIAGNOSIS, "Что на фото?", use_max=True, attachments=[f_id], p_type="diagnosis")
 
     def identify_plant_photo(self, db: Session, user_id: int, img: bytes):
-        # определение вида для базы 
-        f_id = self.upload_image(img)
+        # определение вида растения по фото для добавления в базу. 
+        # используется тяжелая модель max для обеспечения точности систематики.
+        opt_img = self._optimize_for_ai(img)
+        f_id = self.upload_image(opt_img)
         if not f_id: return None, "Загрузка изображения не удалась."
         res, err = self.get_ai_response(db, user_id, PROMPT_IDENTIFY_TO_ADD, "Кто это?", use_max=True, attachments=[f_id], p_type="identify")
         if err: return None, err

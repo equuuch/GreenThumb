@@ -11,25 +11,25 @@ from config import Config
 class ExportService:
     @staticmethod
     def _init_pdf_engine():
-        # инициализация дежавю санс — самого стабильного шрифта для python pdf. 
-        # он гарантированно поддерживает кириллицу и совместим с парсером reportlab. 
-        # файл должен лежать по пути assets/fonts/DejaVuSans.ttf.
+        # поиск файла шрифта. 
+        # мы проверяем наличие файла DejaVuSans.ttf в папке assets/fonts. 
+        # если файл найден, регистрируем его в системе reportlab под именем 'DejaVu'.
         font_path = os.path.join(Config.FONTS_DIR, "DejaVuSans.ttf")
         
         if os.path.exists(font_path):
             try:
-                # регистрируем шрифт под именем 'DejaVu'
                 pdfmetrics.registerFont(TTFont('DejaVu', font_path))
                 return 'DejaVu'
             except Exception as e:
-                print(f"предупреждение: не удалось загрузить {font_path}: {e}")
+                print(f"предупреждение: ошибка регистрации шрифта: {e}")
                 return 'Helvetica'
         
-        print("предупреждение: файл шрифта не найден, откат к Helvetica")
+        print(f"предупреждение: шрифт не найден по пути {font_path}")
         return 'Helvetica'
 
     @staticmethod
     def create_plant_pdf(data: dict) -> str:
+        # создание директории отчетов, если она отсутствует
         if not os.path.exists(Config.REPORTS_DIR):
             os.makedirs(Config.REPORTS_DIR, exist_ok=True)
 
@@ -39,28 +39,11 @@ class ExportService:
         font_name = ExportService._init_pdf_engine()
         doc = SimpleDocTemplate(filepath, pagesize=A4)
         
-        # создание стилей с поддержкой выбранного шрифта
-        rus_style = ParagraphStyle(
-            'RusNormal', 
-            fontName=font_name, 
-            fontSize=10, 
-            leading=12
-        )
-        title_style = ParagraphStyle(
-            'RusTitle', 
-            fontName=font_name, 
-            fontSize=16, 
-            leading=20, 
-            alignment=1,
-            spaceAfter=20
-        )
+        rus_style = ParagraphStyle('RusNormal', fontName=font_name, fontSize=10, leading=12)
+        title_style = ParagraphStyle('RusTitle', fontName=font_name, fontSize=16, leading=20, alignment=1, spaceAfter=20)
 
-        elements = []
-        
-        # 1. заголовок
-        elements.append(Paragraph(f"ОТЧЕТ ПО РАСТЕНИЮ: {data['name'].upper()}", title_style))
+        elements = [Paragraph(f"ОТЧЕТ ПО РАСТЕНИЮ: {data['name'].upper()}", title_style)]
 
-        # 2. технические данные
         table_data = [
             [Paragraph("Характеристика", rus_style), Paragraph("Значение", rus_style)],
             [Paragraph("Вид", rus_style), Paragraph(data['species'], rus_style)],
@@ -79,10 +62,10 @@ class ExportService:
         ]))
         elements.append(main_table)
 
-        # сборка документа
         try:
             doc.build(elements)
+            # возвращаем полный путь к файлу для корректной проверки в тестах
             return filepath
         except Exception as e:
-            print(f"критическая ошибка сборки pdf: {e}")
+            print(f"ошибка при сборке pdf документа: {e}")
             return ""
