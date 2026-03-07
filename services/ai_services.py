@@ -64,26 +64,39 @@ class GigaChatService:
             return image_bytes
 
     def upload_image(self, image_bytes):
-        # загрузка фотографии во временное хранилище сбера. 
-        # для vision-анализа необходимо сначала получить идентификатор файла, 
-        # который затем прикрепляется к основному запросу генерации.
+        # процесс загрузки изображения во временное хранилище. 
+        # согласно документации опенапи, для использования файла в чате 
+        # необходимо передать заголовок X-Client-ID и параметр purpose=general. 
+        # использование RqUID позволяет службе поддержки сбера отследить запрос при сбое.
         self._update_token()
-        if not self.access_token: return None
+        if not self.access_token: 
+            return None
 
         headers = {
             'Authorization': f'Bearer {self.access_token}', 
-            'RqUID': str(uuid.uuid4()),
+            'RqUID': str(uuid.uuid4()), # уникальный идентификатор транзакции
             'X-Client-ID': self.client_id
         }
-        files = {'file': ('plant.jpg', image_bytes, 'image/jpeg')}
+        
+        # 'purpose': 'general' — это ключ, открывающий доступ ии к файлу
+        files = {
+            'file': ('plant.jpg', image_bytes, 'image/jpeg'),
+            'purpose': (None, 'general')
+        }
         
         try:
             res = requests.post(f"{self.base_url}/files", headers=headers, files=files, verify=False)
+            
+            # если сбер вернет не 200, мы увидим причину в консоли
+            if res.status_code != 200:
+                print(f"Технический лог Сбера ({res.status_code}): {res.text}")
+                return None
+                
             return res.json().get('id')
         except Exception as e:
-            print(f"ошибка загрузки фото: {e}")
+            print(f"Ошибка сетевого уровня при загрузке фото: {e}")
             return None
-
+        
     def get_ai_response(self, db: Session, user_id: int, system_prompt, user_text, use_max=False, attachments=None, p_type="chat"):
         # универсальный метод получения ответа от модели. 
         # объединяет логику выбора модели (lite/max), автоматическую настройку 

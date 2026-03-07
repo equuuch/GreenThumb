@@ -2,97 +2,109 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from database.models import Plant, PlantCatalog, PlantAlias, CareCalendar, GrowthLog
 from .file_service import FileService
-import json
 
 class PlantService:
     @staticmethod
     def get_catalog_item_by_name(db: Session, name: str):
-        # стандартный поиск по базе через алиасы и официальные названия.
+        # стандартный поиск вида в справочнике. 
+        # алгоритм сначала проверяет таблицу алиасов для нормализации народных названий, 
+        # затем выполняет поиск по официальному реестру.
         alias = db.query(PlantAlias).filter(PlantAlias.user_input == name.lower()).first()
         if alias:
             return db.query(PlantCatalog).filter(PlantCatalog.catalog_id == alias.catalog_id).first()
+        
         return db.query(PlantCatalog).filter(PlantCatalog.species_name == name).first()
 
     @staticmethod
-    def get_or_create_catalog_item(db: Session, ai_service, user_id: int, query: str):
-        # алгоритм автоматического расширения справочника. 
-        # 1. ищем в локальной базе. 
-        # 2. если не нашли — просим ии нормализовать имя. 
-        # 3. если это растение — генерируем паспорт и сохраняем в каталог. 
-        # это позволяет приложению бесконечно расширять список доступных видов.
+    def confirm_and_create_plant(db: Session, user_id: int, catalog_data: dict, custom_name: str = None, image_bytes: bytes = None):
+        # процесс окончательной регистрации растения с верификацией данных. 
+        # метод получает проверенные или отредактированные пользователем данные, 
+        # проверяет наличие вида в справочнике и, если вид новый, вносит его в каталог. 
+        # после этого создается личный экземпляр растения и планируется календарь.
         
-        # 1. попытка локального поиска
-        item = PlantService.get_catalog_item_by_name(db, query)
-        if item:
-            return item, None
-
-        # 2. если в базе нет, идем в ИИ для нормализации
-        norm_data, err = ai_service.identify_by_name(db, user_id, query)
-        if err or not norm_data.get('is_plant'):
-            return None, "Растение не найдено в базе и не опознано ассистентом."
-
-        standard_name = norm_data['standard_name']
+        species_name = catalog_data.get('species_name')
         
-        # проверяем, может под стандартным именем оно уже есть в базе
-        item = db.query(PlantCatalog).filter(PlantCatalog.species_name == standard_name).first()
-        if item:
-            return item, None
-
-        # 3. генерируем паспорт через ИИ для нового вида
-        passport, err = ai_service.get_passport_data(db, user_id, standard_name)
-        if err:
-            return None, f"Ошибка при получении данных от ИИ: {err}"
-
-        # 4. сохраняем новый вид в глобальный справочник
-        try:
-            new_catalog_item = PlantCatalog(
-                species_name=passport['species_name'],
-                latin_name=passport['latin_name'],
-                description=passport['description'],
-                default_watering_interval=passport['watering_interval'],
-                default_light_level=passport['light_level']
-            )
-            db.add(new_catalog_item)
-            db.flush()
-
-            # добавляем исходный запрос пользователя как алиас для будущего поиска
-            new_alias = PlantAlias(
-                user_input=query.lower(),
-                catalog_id=new_catalog_item.catalog_id
-            )
-            db.add(new_alias)
-            db.commit()
-            db.refresh(new_catalog_item)
-            return new_catalog_item, None
-            
-        except Exception as e:
-            db.rollback()
-            return None, f"Ошибка при обновлении справочника: {str(e)}."
-
-    @staticmethod
-    def create_user_plant(db: Session, user_id: int, catalog_id: int, custom_name: str = None, image_bytes: bytes = None):
-        # логика регистрации растения остается прежней
-        catalog_item = db.query(PlantCatalog).get(catalog_id)
-        if not catalog_item: return None
+        # 1. проверка наличия вида в глобальном каталоге
+        catalog_item = db.query(PlantCatalog).filter_by(species_name=species_name).first()
         
+        if not catalog_item:
+            # создание новой записи в справочнике на основе одобренных данных
+            try:
+                catalog_item = PlantCatalog(
+                    species_name=species_name,
+                    latin_name=catalog_data.get('latin_name'),
+                    description=catalog_data.get('description'),
+                    default_watering_interval=catalog_data.get('watering_interval', 7),
+                    default_light_level=catalog_data.get('light_level', 0.5)
+                )
+                db.add(catalog_item)
+                db.flush() # получаем id для связей
+            except Exception:
+                db.rollback()
+                return None, "Ошибка при создании нового вида в справочнике."
+
+        # 2. создание персонального экземпляра растения
+        # оптимизация и сохранение фото происходит через FileService
         image_url = FileService.process_and_save(image_bytes, subfolder="plants")
-        
+
         new_plant = Plant(
             user_id=user_id,
-            catalog_id=catalog_id,
+            catalog_id=catalog_item.catalog_id,
             custom_name=custom_name or catalog_item.species_name,
             image_url=image_url,
             last_watered_at=datetime.now(),
             status_text="healthy"
         )
+        
         try:
             db.add(new_plant)
             db.flush() 
+
+            # автоматическая инициализация цикла ухода
             next_watering = datetime.now() + timedelta(days=catalog_item.default_watering_interval)
-            db.add(CareCalendar(plant_id=new_plant.plant_id, task_type="watering", scheduled_date=next_watering.date()))
+            
+            first_task = CareCalendar(
+                plant_id=new_plant.plant_id,
+                task_type="watering",
+                scheduled_date=next_watering.date(),
+                is_completed=False
+            )
+            db.add(first_task)
             db.commit()
             db.refresh(new_plant)
-            return new_plant
-        except Exception:
+            return new_plant, None
+        except Exception as e:
             db.rollback()
-            return None
+            return None, f"Ошибка при добавлении растения: {str(e)}."
+
+    @staticmethod
+    def add_measurement(db: Session, plant_id: int, height: float, note: str = "", image_bytes: bytes = None):
+        # фиксация прогресса развития растения. 
+        # ручной ввод высоты пользователем обеспечивает точность технических данных. 
+        # фотофиксация (опционально) сохраняется в папку logs для визуального мониторинга.
+        image_path = FileService.process_and_save(image_bytes, subfolder="logs")
+        
+        new_log = GrowthLog(
+            plant_id=plant_id,
+            height=height,
+            note=note,
+            image_path=image_path
+        )
+        try:
+            db.add(new_log)
+            # обновление статуса в основной таблице для быстрого доступа
+            plant = db.query(Plant).get(plant_id)
+            if plant:
+                plant.status_text = f"Рост: {height} см"
+            
+            db.commit()
+            db.refresh(new_log)
+            return new_log, None
+        except Exception as e:
+            db.rollback()
+            return None, f"Ошибка сохранения данных прогресса: {str(e)}."
+
+    @staticmethod
+    def get_user_plants(db: Session, user_id: int):
+        # получение списка всех активных растений из коллекции пользователя
+        return db.query(Plant).filter(Plant.user_id == user_id, Plant.is_active == True).all()

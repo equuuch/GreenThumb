@@ -6,14 +6,14 @@ bin/
 lib/
 include/
 
-# кэш питона
+# кэш питона и линтеров
 __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
 .mypy_cache/
 
-# секреты
+# секреты и ключи api
 .env
 .env.*
 !.env.example
@@ -24,12 +24,19 @@ __pycache__/
 *.db-journal
 
 # медиа файлы пользователей и отчеты
+# сохраняем структуру папок через .gitkeep, но игнорируем контент
 assets/uploads/*
 !assets/uploads/.gitkeep
 assets/reports/*
 !assets/reports/.gitkeep
 
-# специфичные файлы flet и сборки
+# локальные тестовые артефакты в корне
+# игнорируем фотографии, которые мы использовали для разовых тестов ии
+test_*.jpg
+test_*.jpeg
+test_*.png
+
+# специфичные файлы flet и сборки pwa/android
 dist/
 build/
 __flet_build__/
