@@ -113,7 +113,7 @@ class GigaChatService:
                 consultation_type=p_type
             )
             db.add(consultation)
-            db.add(TokenUsage(user_id=user_id, tokens_spent=usage))
+            db.add(TokenUsage(user_id=user_id, tokens_count=usage, request_type=p_type))
             db.commit()
 
             return clean_content, None

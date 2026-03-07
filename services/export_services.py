@@ -5,90 +5,84 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfbase.ttfonts import TTFont, TTFError
 from config import Config
 
 class ExportService:
     @staticmethod
     def _init_pdf_engine():
-        # настройка движка генерации документов. 
-        # стандартные шрифты pdf не поддерживают кириллицу, поэтому 
-        # мы принудительно регистрируем шрифт freesans. 
-        # файл шрифта должен находиться в assets/fonts/FreeSans.ttf.
-        font_path = os.path.join(Config.FONTS_DIR, "FreeSans.ttf")
+        # инициализация дежавю санс — самого стабильного шрифта для python pdf. 
+        # он гарантированно поддерживает кириллицу и совместим с парсером reportlab. 
+        # файл должен лежать по пути assets/fonts/DejaVuSans.ttf.
+        font_path = os.path.join(Config.FONTS_DIR, "DejaVuSans.ttf")
+        
         if os.path.exists(font_path):
-            pdfmetrics.registerFont(TTFont('FreeSans', font_path))
-            return 'FreeSans'
+            try:
+                # регистрируем шрифт под именем 'DejaVu'
+                pdfmetrics.registerFont(TTFont('DejaVu', font_path))
+                return 'DejaVu'
+            except Exception as e:
+                print(f"предупреждение: не удалось загрузить {font_path}: {e}")
+                return 'Helvetica'
+        
+        print("предупреждение: файл шрифта не найден, откат к Helvetica")
         return 'Helvetica'
 
     @staticmethod
     def create_plant_pdf(data: dict) -> str:
-        # генерация строгого технического отчета в формате pdf. 
-        # документ строится по сетке a4 и включает в себя: заголовок, 
-        # паспортную таблицу характеристик и детальный журнал всех изменений. 
-        # использование TableStyle обеспечивает профессиональный вид с сеткой и заливкой.
-        
         if not os.path.exists(Config.REPORTS_DIR):
             os.makedirs(Config.REPORTS_DIR, exist_ok=True)
 
-        filename = f"report_{datetime.now().strftime('%H%M%S')}.pdf"
+        filename = f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
         filepath = os.path.join(Config.REPORTS_DIR, filename)
         
-        font = ExportService._init_pdf_engine()
+        font_name = ExportService._init_pdf_engine()
         doc = SimpleDocTemplate(filepath, pagesize=A4)
-        styles = getSampleStyleSheet()
         
-        # стиль для русского текста
-        normal_style = ParagraphStyle('Rus', fontName=font, fontSize=10, leading=12)
-        header_style = ParagraphStyle('RusH', fontName=font, fontSize=16, leading=20, alignment=1)
+        # создание стилей с поддержкой выбранного шрифта
+        rus_style = ParagraphStyle(
+            'RusNormal', 
+            fontName=font_name, 
+            fontSize=10, 
+            leading=12
+        )
+        title_style = ParagraphStyle(
+            'RusTitle', 
+            fontName=font_name, 
+            fontSize=16, 
+            leading=20, 
+            alignment=1,
+            spaceAfter=20
+        )
 
         elements = []
-
+        
         # 1. заголовок
-        elements.append(Paragraph(f"ТЕХНИЧЕСКИЙ ОТЧЕТ: {data['name'].upper()}", header_style))
-        elements.append(Spacer(1, 20))
+        elements.append(Paragraph(f"ОТЧЕТ ПО РАСТЕНИЮ: {data['name'].upper()}", title_style))
 
-        # 2. таблица характеристик (строгий стиль)
+        # 2. технические данные
         table_data = [
-            [Paragraph("Параметр", normal_style), Paragraph("Значение", normal_style)],
-            [Paragraph("Биологический вид", normal_style), Paragraph(data['species'], normal_style)],
-            [Paragraph("Латинское название", normal_style), Paragraph(data['latin'], normal_style)],
-            [Paragraph("Дисциплина ухода", normal_style), Paragraph(f"{data['care_data']['score']}%", normal_style)],
-            [Paragraph("Общий прирост", normal_style), Paragraph(f"{data['growth_data']['delta']} см", normal_style)]
+            [Paragraph("Характеристика", rus_style), Paragraph("Значение", rus_style)],
+            [Paragraph("Вид", rus_style), Paragraph(data['species'], rus_style)],
+            [Paragraph("Латынь", rus_style), Paragraph(data['latin'], rus_style)],
+            [Paragraph("Дисциплина полива", rus_style), Paragraph(f"{data['care_data']['score']}%", rus_style)],
+            [Paragraph("Общий рост", rus_style), Paragraph(f"{data['growth_data']['delta']} см", rus_style)]
         ]
 
         main_table = Table(table_data, colWidths=[150, 250])
         main_table.setStyle(TableStyle([
             ('GRID', (0,0), (-1,-1), 1, colors.black),
             ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
-            ('PADDING', (0,0), (-1,-1), 6)
+            ('FONTNAME', (0,0), (-1,-1), font_name),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('LEFTPADDING', (0,0), (-1,-1), 10),
         ]))
         elements.append(main_table)
-        elements.append(Spacer(1, 25))
 
-        # 3. журнал замеров
-        elements.append(Paragraph("ЖУРНАЛ МОНИТОРИНГА РОСТА", normal_style))
-        elements.append(Spacer(1, 10))
-
-        log_rows = [[Paragraph("Дата", normal_style), Paragraph("Высота", normal_style), Paragraph("Заметка", normal_style)]]
-        for log in data['history']:
-            log_rows.append([
-                Paragraph(log.measured_at.strftime("%d.%m.%Y"), normal_style),
-                Paragraph(f"{log.height} см", normal_style),
-                Paragraph(log.note or "-", normal_style)
-            ])
-
-        log_table = Table(log_rows, colWidths=[80, 80, 240])
-        log_table.setStyle(TableStyle([
-            ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE')
-        ]))
-        elements.append(log_table)
-
-        # сборка файла
+        # сборка документа
         try:
             doc.build(elements)
             return filepath
         except Exception as e:
-            print(f"Ошибка сохранения PDF: {e}")
+            print(f"критическая ошибка сборки pdf: {e}")
             return ""

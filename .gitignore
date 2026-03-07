@@ -13,19 +13,21 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 
-# секреты (игнорируем все вариации env файлов)
+# секреты
 .env
 .env.*
 !.env.example
 
-# база данных
+# база данных (храним только код сида, а не сам файл базы)
 *.db
 *.sqlite3
 *.db-journal
 
-# медиа файлы пользователей
+# медиа файлы пользователей и отчеты
 assets/uploads/*
 !assets/uploads/.gitkeep
+assets/reports/*
+!assets/reports/.gitkeep
 
 # специфичные файлы flet и сборки
 dist/

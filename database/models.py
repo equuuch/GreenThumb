@@ -51,9 +51,10 @@ class Plant(Base):
     user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
     catalog_id = Column(Integer, ForeignKey("plant_catalog.catalog_id"), nullable=False)
     custom_name = Column(String)
-    image_url = Column(String) # путь к локальному файлу
+    image_url = Column(String)
     status_text = Column(String, default='healthy')
     last_watered_at = Column(DateTime)
+    added_at = Column(DateTime, server_default=func.now()) 
     is_active = Column(Boolean, default=True)
 
     owner = relationship("User", back_populates="plants")
