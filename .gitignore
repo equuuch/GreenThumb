@@ -30,8 +30,7 @@ assets/uploads/*
 assets/reports/*
 !assets/reports/.gitkeep
 
-# локальные тестовые артефакты в корне
-# игнорируем фотографии, которые мы использовали для разовых тестов ии
+# локальные тестовые картинки
 test_*.jpg
 test_*.jpeg
 test_*.png
