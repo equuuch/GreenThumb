@@ -82,7 +82,7 @@ def DetailsView(page: ft.Page):
                 ft.Container(height=10),
                 
                 # Пункты меню
-                create_stat(ft.Icons.WATER_DROP_OUTLINED, "Содержание воды"),
+                create_stat(ft.Icons.WATER_DROP_OUTLINED, "Содержание воды", 0.4),
                 ft.Container(height=10),
                 create_stat(ft.Icons.WB_SUNNY_OUTLINED, "Уровень освещенности", 0.7),
                 ft.Container(height=10),
