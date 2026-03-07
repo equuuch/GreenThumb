@@ -19,9 +19,8 @@ class TokenUsage(Base):
     __tablename__ = "token_usage"
     token_usage_id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
-    model_name = Column(String)
     tokens_count = Column(Integer)
-    request_type = Column(String)
+    request_type = Column(String) # normalize, passport, diagnosis и т.д.
     created_at = Column(DateTime, server_default=func.now())
 
     user = relationship("User", back_populates="token_usages")
@@ -52,8 +51,7 @@ class Plant(Base):
     user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
     catalog_id = Column(Integer, ForeignKey("plant_catalog.catalog_id"), nullable=False)
     custom_name = Column(String)
-    image_url = Column(String)
-    file_id = Column(String)
+    image_url = Column(String) # путь к локальному файлу
     status_text = Column(String, default='healthy')
     last_watered_at = Column(DateTime)
     is_active = Column(Boolean, default=True)
@@ -79,6 +77,8 @@ class GrowthLog(Base):
     log_id = Column(Integer, primary_key=True, autoincrement=True)
     plant_id = Column(Integer, ForeignKey("plants.plant_id", ondelete="CASCADE"), nullable=False)
     height = Column(Numeric, nullable=False)
+    note = Column(Text) # заметка
+    image_path = Column(String) 
     measured_at = Column(Date, server_default=func.current_date())
 
     plant = relationship("Plant", back_populates="growth_logs")
@@ -88,9 +88,9 @@ class AIConsultation(Base):
     consultation_id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
     plant_id = Column(Integer, ForeignKey("plants.plant_id", ondelete="CASCADE"), nullable=True)
-    session_id = Column(String)
-    role = Column(String) 
-    message_text = Column(Text, nullable=False)
+    prompt_text = Column(Text, nullable=False)
+    response_text = Column(Text, nullable=False)
+    consultation_type = Column(String) # тип запроса для аналитики
     created_at = Column(DateTime, server_default=func.now())
 
     user = relationship("User", back_populates="consultations")
