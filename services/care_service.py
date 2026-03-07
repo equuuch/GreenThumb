@@ -71,8 +71,8 @@ class CareService:
 
     @staticmethod
     def get_plant_schedule(db: Session, plant_id: int):
-        # получение будущего графика для конкретного растения. 
-        # используется фронтендом для отображения календаря в карточке растения.
+        # получение будущего графика для конкретного растения
+        # используется фронтендом для отображения календаря в карточке растения
         return db.query(CareCalendar).filter(
             CareCalendar.plant_id == plant_id,
             CareCalendar.is_completed == False

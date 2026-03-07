@@ -40,3 +40,9 @@ class Config:
 
     # качество сжатия для экономии токенов и места
     IMAGE_QUALITY = 75
+
+    # директории для отчетов
+    REPORTS_DIR = os.path.join("assets", "reports")
+    
+    # путь к шрифтам для поддержки русского языка в pdf
+    FONTS_DIR = os.path.join("assets", "fonts")
