@@ -2,15 +2,17 @@ import flet as ft
 from database.session import get_db
 from services.auth_service import AuthService
 
-def AuthView(page: ft.Page, nav, user_state):
+# ДОБАВИЛИ АРГУМЕНТ is_register_mode=False
+def AuthView(page: ft.Page, nav, user_state, is_register_mode=False):
     view = ft.View()
     view.route = "/auth"
     view.bgcolor = ft.Colors.WHITE
     view.padding = 0
     view.scroll = ft.ScrollMode.AUTO 
 
-    # ЛОКАЛЬНОЕ СОСТОЯНИЕ (Обычный словарь вместо Ref)
-    ui_state = {"is_login": True}
+    # ИСПОЛЬЗУЕМ АРГУМЕНТ ДЛЯ НАЧАЛЬНОГО СОСТОЯНИЯ
+    # Если is_register_mode=True, то is_login будет False (откроется регистрация)
+    ui_state = {"is_login": not is_register_mode}
 
     def show_msg(text, color=ft.Colors.RED):
         page.snack_bar = ft.SnackBar(
@@ -21,8 +23,9 @@ def AuthView(page: ft.Page, nav, user_state):
         page.update()
 
     # --- ПОЛЯ ВВОДА ---
+    # Поле "Имя" теперь изначально видимо, если мы в режиме регистрации
     name_input = ft.TextField(
-        label="Имя", visible=False, border_radius=15, bgcolor="#F9F9F9",
+        label="Имя", visible=not ui_state["is_login"], border_radius=15, bgcolor="#F9F9F9",
         border_color="#E0E0E0", focused_border_color="#009753",
         color=ft.Colors.BLACK
     )
@@ -37,10 +40,16 @@ def AuthView(page: ft.Page, nav, user_state):
         focused_border_color="#009753", color=ft.Colors.BLACK, value="123"
     )
 
-    title_txt = ft.Text(value="Авторизация", size=28, weight="bold", color=ft.Colors.BLACK)
-    submit_btn_txt = ft.Text(value="Войти", color=ft.Colors.WHITE, weight="bold", size=16)
-    toggle_hint = ft.Text("Нет аккаунта?", color=ft.Colors.BLACK)
-    toggle_link = ft.Text("Зарегистрируйтесь", color="#009753", weight="bold")
+    # НАСТРАИВАЕМ ТЕКСТЫ ПО УМОЛЧАНИЮ В ЗАВИСИМОСТИ ОТ РЕЖИМА
+    initial_title = "Авторизация" if ui_state["is_login"] else "Регистрация"
+    initial_btn = "Войти" if ui_state["is_login"] else "Создать аккаунт"
+    initial_hint = "Нет аккаунта?" if ui_state["is_login"] else "Уже есть аккаунт?"
+    initial_link = "Зарегистрируйтесь" if ui_state["is_login"] else "Войдите в систему"
+
+    title_txt = ft.Text(value=initial_title, size=28, weight="bold", color=ft.Colors.BLACK)
+    submit_btn_txt = ft.Text(value=initial_btn, color=ft.Colors.WHITE, weight="bold", size=16)
+    toggle_hint = ft.Text(initial_hint, color=ft.Colors.BLACK)
+    toggle_link = ft.Text(initial_link, color="#009753", weight="bold")
 
     def toggle_mode(e):
         ui_state["is_login"] = not ui_state["is_login"]
@@ -91,10 +100,10 @@ def AuthView(page: ft.Page, nav, user_state):
                 title_txt, name_input, email_input, password_input,
                 ft.Container(height=10), login_btn,
                 ft.GestureDetector(
-                    content=ft.Row([toggle_hint, toggle_link], alignment="center"),
+                    content=ft.Row([toggle_hint, toggle_link], alignment=ft.MainAxisAlignment.CENTER),
                     on_tap=toggle_mode
                 )
-            ], horizontal_alignment="center")
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER)
         )
     )
     return view

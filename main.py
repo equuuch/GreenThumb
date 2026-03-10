@@ -11,8 +11,9 @@ from views.profile_view import ProfileView
 from views.reference_view import ReferenceView
 from views.analytics_view import AnalyticsView
 from views.my_plant_details_view import MyPlantDetailsView
-from views.search_view import SearchView # ДОБАВЛЕНО
-from urllib.parse import unquote # ДОБАВЛЕНО
+from views.search_view import SearchView
+from urllib.parse import unquote
+from views.details_view import DetailsView
 
 # Попытка импорта NavBar (если файла нет, будет None)
 try:
@@ -61,20 +62,21 @@ def main(page: ft.Page):
                     print("ОШИБКА: Неверный ID в ссылке")
                     v = HomeView(page, navigate)
 
-            # 2. Логика поиска (ДОБАВЛЕНО)
+            # 2. Логика поиска с ИИ (/search?q=Запрос)
             elif page.route.startswith("/search"):
                 try:
-                    # Извлекаем текст запроса и декодируем его
                     query = unquote(page.route.split("q=")[-1])
                     v = SearchView(page, navigate, query, USER_STATE)
                 except Exception as ex:
                     print(f"ОШИБКА ПОИСКА: {ex}")
                     v = HomeView(page, navigate)
 
-            # 3. Стандартные маршруты
-            elif page.route == "/auth":
-                v = AuthView(page, navigate, USER_STATE)
-            
+            # 3. Авторизация с поддержкой режима (?mode=register)
+            elif page.route.startswith("/auth"):
+                is_register = "?mode=register" in page.route
+                v = AuthView(page, navigate, USER_STATE, is_register_mode=is_register)
+
+            # 4. Стандартные маршруты
             elif page.route == "/user_home":
                 v = UserHomeView(page, navigate, USER_STATE)
             
@@ -88,10 +90,13 @@ def main(page: ft.Page):
                 v = ProfileView(page, navigate, USER_STATE)
             
             elif page.route == "/analytics":
-                v = AnalyticsView(page, navigate) # Если нужен USER_STATE, добавьте в аргументы
+                v = AnalyticsView(page, navigate) 
             
             elif page.route == "/my_plant_details":
                 v = MyPlantDetailsView(page, navigate, USER_STATE)
+            
+            elif page.route == "/details":
+                v = DetailsView(page, navigate)
             
             elif page.route == "/" or page.route == "":
                 v = HomeView(page, navigate)
@@ -102,13 +107,14 @@ def main(page: ft.Page):
                 v = HomeView(page, navigate)
 
             # --- НАСТРОЙКА NAVBAR ---
-            # Скрываем NavBar на Гостевом экране, Авторизации, Деталях и ПОИСКЕ
-            hide_nav_on = ["/", "/auth", "/my_plant_details", "/analytics", "/search"]
+            # Скрываем NavBar на Гостевом экране, Авторизации, Деталях и Поиске
+            hide_nav_on = ["/", "/auth", "/my_plant_details", "/analytics", "/details", "/search"]
             
-            # Проверяем, не начинается ли маршрут с /reference/ (там тоже обычно нет меню)
+            # Также скрываем меню на экране справочника и авторизации с параметром
             is_reference = page.route.startswith("/reference/")
+            is_auth = page.route.startswith("/auth")
 
-            if page.route not in hide_nav_on and not is_reference and NavBar:
+            if page.route not in hide_nav_on and not is_reference and not is_auth and NavBar:
                 def on_nav_click(idx):
                     routes = ["/user_home", "/my_plants", "/scanner", "/profile"]
                     navigate(routes[idx])

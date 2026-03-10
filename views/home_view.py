@@ -66,7 +66,7 @@ def HomeView(page: ft.Page, nav):
         bgcolor="#009753", color="white",
         width=float("inf"), height=50,
         style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=15)),
-        on_click=lambda _: nav("/auth")
+        on_click=lambda _: nav("/auth?mode=register")
     )
 
     lv = ft.ListView(expand=True, spacing=30)
