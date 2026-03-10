@@ -1,4 +1,6 @@
 import flet as ft
+from database.session import get_db
+from database.models import PlantCatalog
 
 def HomeView(page: ft.Page, nav):
     view = ft.View()
@@ -16,7 +18,6 @@ def HomeView(page: ft.Page, nav):
         hint_text="Найти растение (например, Монстера)...",
         border_radius=15, bgcolor="white",
         prefix_icon=ft.Icons.SEARCH,
-        # ВАЖНО: Переход на маршрут поиска при нажатии Enter
         on_submit=lambda e: nav(f"/search?q={e.control.value}")
     )
 
@@ -25,20 +26,40 @@ def HomeView(page: ft.Page, nav):
             bgcolor="white", padding=15, border_radius=25,
             shadow=ft.BoxShadow(blur_radius=15, color=ft.Colors.BLACK_12),
             col={"xs": 6, "sm": 6},
+            # Переход по РЕАЛЬНОМУ ID из базы
             on_click=lambda _: nav(f"/reference/{cat_id}"),
             content=ft.Column([
                 ft.Image(src=img, height=120, fit="contain"),
-                ft.Text(name, weight="bold", size=16, color="black"),
+                ft.Text(name, weight="bold", size=16, color="black", max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
                 ft.Text("Справочник", size=12, color="#009753")
             ], horizontal_alignment="center")
         )
 
-    grid = ft.ResponsiveRow(spacing=20, controls=[
-        create_card("Алоэ", "/aloe.png", 1),
-        create_card("Хризантема", "/hrizantema.png", 2),
-        create_card("Роза", "/rose.png", 3),
-        create_card("Ландыш", "/aloe.png", 4),
-    ])
+    grid = ft.ResponsiveRow(spacing=20)
+
+    # 1. Загружаем первые 4 растения из РЕАЛЬНОЙ БАЗЫ ДАННЫХ
+    with next(get_db()) as db:
+        popular_plants = db.query(PlantCatalog).limit(4).all()
+        
+        if not popular_plants:
+            # Если база вообще пустая, показываем сообщение
+            grid.controls.append(ft.Text("Справочник пока пуст. Воспользуйтесь поиском!", color="gray"))
+        else:
+            # Если в базе есть растения, создаем карточки на их основе
+            # (Картинки пока берем заглушки, так как в PlantCatalog их нет)
+            images = ["/aloe.png", "/hrizantema.png", "/rose.png", "/hibiscus.png"]
+            
+            for i, plant in enumerate(popular_plants):
+                # Подставляем картинку по кругу, если растений больше 4
+                img_src = images[i % len(images)] 
+                
+                grid.controls.append(
+                    create_card(
+                        name=plant.species_name, # Берем реальное имя из БД
+                        img=img_src, 
+                        cat_id=plant.catalog_id  # Берем реальный ID из БД!
+                    )
+                )
 
     cta_btn = ft.ElevatedButton(
         "Зарегистрироваться, чтобы создать сад",
