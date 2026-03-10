@@ -1,6 +1,7 @@
 import flet as ft
-from database.session import SessionLocal
+from database.session import get_db
 from services.plant_services import PlantService
+from services.care_service import CareService
 
 def UserHomeView(page: ft.Page, nav, user_state):
     view = ft.View()
@@ -8,17 +9,17 @@ def UserHomeView(page: ft.Page, nav, user_state):
     view.bgcolor = "#F9F9F9"
     view.padding = 20
 
-    user_name = user_state.get("name", "Шахзод")
-    user_id = user_state.get("id", 1)
+    user_name = user_state.get("name", "Садовод")
+    user_id = user_state.get("id")
 
-    db = SessionLocal()
-    try:
+    # 1. ЗАГРУЗКА ДАННЫХ ИЗ БАЗЫ
+    with next(get_db()) as db:
+        # Получаем активные растения
         my_plants = PlantService.get_user_plants(db, user_id)
-    except:
-        my_plants = []
-    finally:
-        db.close()
+        # Получаем задачи на сегодня
+        today_tasks = CareService.get_today_tasks(db, user_id)
 
+    # --- ШАПКА ---
     header = ft.Row(
         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
         controls=[
@@ -30,47 +31,56 @@ def UserHomeView(page: ft.Page, nav, user_state):
         ]
     )
 
-    def create_card(p):
-        container = ft.Container(
-            bgcolor="white", padding=10, border_radius=20,
-            col={"xs": 6, "sm": 6},
-            shadow=ft.BoxShadow(blur_radius=10, color=ft.Colors.BLACK12),
-            # ПЕРЕХОД НА ВКЛАДКУ РАСТЕНИЙ ПО ТВОЕМУ ЗАПРОСУ
-            on_click=lambda _: nav("/my_plants") 
-        )
-        col = ft.Column(spacing=8)
-        col.controls.append(ft.Image(src=p.image_url or "/aloe.png", width=150, height=130, fit="cover", border_radius=15))
-        col.controls.append(ft.Text(p.custom_name, weight="bold", size=16, color="black"))
-        
-        h_row = ft.Row(spacing=10)
-        h_row.controls.append(ft.Icon(ft.Icons.FAVORITE_BORDER, color="#009753", size=20))
-        h_row.controls.append(ft.Container(bgcolor="#009753", height=8, expand=7, border_radius=4))
-        h_row.controls.append(ft.Container(bgcolor="#E0E0E0", height=8, expand=3, border_radius=4))
-        
-        col.controls.append(h_row)
-        container.content = col
-        return container
-
+    # --- ПРЕВЬЮ РАСТЕНИЙ (Grid) ---
     grid = ft.ResponsiveRow(spacing=15)
-    for p in my_plants:
-        grid.controls.append(create_card(p))
+    if not my_plants:
+        grid.controls.append(ft.Text("В саду пока пусто...", size=14, color="gray", italic=True))
+    else:
+        # Показываем только первые 2 для главного экрана
+        for p in my_plants[:2]:
+            img_path = f"uploads/{p.image_url}" if p.image_url else "/aloe.png"
+            grid.controls.append(
+                ft.Container(
+                    bgcolor="white", padding=10, border_radius=20, col=6,
+                    shadow=ft.BoxShadow(blur_radius=10, color=ft.Colors.BLACK_12),
+                    on_click=lambda _: nav("/my_plants"),
+                    content=ft.Column([
+                        ft.Image(src=img_path, width=150, height=110, fit="cover", border_radius=15),
+                        ft.Text(p.custom_name, weight="bold", size=14, color="black", max_lines=1),
+                    ])
+                )
+            )
 
-    tasks = ft.Container(
-        bgcolor="white", padding=20, border_radius=20,
-        shadow=ft.BoxShadow(blur_radius=10, color=ft.Colors.BLACK12),
+    # --- СПИСОК ЗАДАЧ ---
+    task_list = ft.Column(spacing=12)
+    if not today_tasks:
+        task_list.controls.append(ft.Text("На сегодня задач нет! Отдыхайте ✨", color="gray", size=14))
+    else:
+        for task in today_tasks:
+            task_list.controls.append(
+                ft.Row([
+                    ft.Icon(
+                        ft.Icons.WATER_DROP_OUTLINED if task.task_type == "watering" else ft.Icons.WB_SUNNY, 
+                        color="#009753", size=20
+                    ),
+                    ft.Text(f"{task.plant.custom_name}: Полить", color="black", size=14, weight="w500"),
+                ], spacing=10)
+            )
+
+    tasks_container = ft.Container(
+        bgcolor="white", padding=20, border_radius=25,
+        shadow=ft.BoxShadow(blur_radius=15, color=ft.Colors.BLACK_12),
         content=ft.Column([
             ft.Text("Сегодняшние задачи", size=18, weight="bold", color="black"),
-            ft.Row([ft.Icon(ft.Icons.WATER_DROP_OUTLINED, color="#009753"), ft.Text("Полить Петрушку", color="black")]),
-            ft.Row([ft.Icon(ft.Icons.WB_SUNNY_OUTLINED, color="#009753"), ft.Text("Поставить на свет Алоэ", color="black")]),
+            ft.Divider(height=1, color="#EEEEEE"),
+            ft.Container(height=5),
+            task_list
         ])
     )
 
-    lv = ft.ListView(expand=True)
-    lv.controls.append(header)
-    lv.controls.append(ft.Container(height=20))
-    lv.controls.append(grid)
-    lv.controls.append(ft.Container(height=20))
-    lv.controls.append(tasks)
+    # Сборка экрана
+    lv = ft.ListView(expand=True, spacing=25)
+    lv.controls.extend([header, grid, tasks_container])
 
     view.controls.append(lv)
     return view
