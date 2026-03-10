@@ -4,7 +4,6 @@ import os
 from database.session import SessionLocal
 from services.ai_services import GigaChatService
 from services.plant_services import PlantService
-from database.models import Plant, PlantCatalog
 
 # чистим консоль от мусора
 logging.getLogger('sqlalchemy.engine').setLevel(logging.WARNING)
@@ -17,53 +16,56 @@ def run_vision_test():
     image_path = "test_callisia.jpg"
 
     print("="*60)
-    print("   GREENTHUMB VISION AI: ТЕСТ РАСПОЗНАВАНИЯ   ")
+    print("   GREENTHUMB VISION AI: ТЕСТ ИНТЕГРАЦИИ (CONFIRMATION FLOW)   ")
     print("="*60)
 
     if not os.path.exists(image_path):
-        print(f"❌ Файл {image_path} не найден! Положи фото в папку проекта.")
+        print(f"❌ Файл {image_path} не найден! Положи фото в папку проекта")
         return
 
     try:
-        # 1. читаем фото в байты
+        # 1. читаем фото
         with open(image_path, "rb") as f:
             img_bytes = f.read()
 
-        # 2. распознавание вида через ИИ (модель MAX)
-        print("\n🧐 Анализируем изображение...")
+        # 2. распознавание вида через ии
+        print("\n🧐 ШАГ 1: Анализ изображения...")
         plant_data, err = ai.identify_plant_photo(db, user_id, img_bytes)
         
         if err or not plant_data:
             print(f"❌ Ошибка распознавания: {err}")
             return
 
-        species_name = plant_data.get('species_name')
-        print(f"✅ ИИ определил растение как: {species_name}")
+        print(f"✅ ИИ предложил вид: {plant_data.get('species_name')}")
 
-        # 3. добавляем в справочник и создаем паспорт, если его еще нет
-        print("\n📖 Проверяем справочник и создаем паспорт...")
-        catalog_item, err = PlantService.get_or_create_catalog_item(db, ai, user_id, species_name)
+        # 3. имитация подтверждения данных пользователем (Confirmation Step)
+        # в реальном приложении здесь фронтенд покажет форму пользователю
+        print("\n📝 ШАГ 2: Подтверждение данных и запись в базу...")
         
-        if not err and catalog_item:
-            print(f"✅ Вид '{catalog_item.species_name}' готов в базе.")
+        # мы можем вручную подправить данные, если ии ошибся (как с каллизией)
+        plant_data['species_name'] = "Каллизия ползучая" 
+        
+        my_plant, err = PlantService.confirm_and_create_plant(
+            db, 
+            user_id=user_id, 
+            catalog_data=plant_data, 
+            custom_name="Моя красавица на балконе",
+            image_bytes=img_bytes
+        )
+        
+        if not err and my_plant:
+            print(f"🎉 Успех! Растение официально добавлено в систему")
+            print(f"🆔 ID растения в базе: {my_plant.plant_id}")
+            print(f"🧬 Вид в каталоге: {my_plant.catalog_info.species_name}")
+            print(f"🖼 Путь к фото: assets/uploads/{my_plant.image_url}")
             
-            # 4. добавляем растение в ЛИЧНУЮ коллекцию пользователя
-            print("\n🪴 Добавляем экземпляр в твой личный сад...")
-            my_plant = PlantService.create_user_plant(
-                db, 
-                user_id=user_id, 
-                catalog_id=catalog_item.catalog_id, 
-                custom_name="Моя Каллизия на балконе",
-                image_bytes=img_bytes # сохраняем и оригинал фото
-            )
-            
-            if my_plant:
-                print(f"🎉 Успех! Растение добавлено.")
-                print(f"🆔 ID в твоем саду: {my_plant.plant_id}")
-                print(f"🖼 Путь к фото: assets/uploads/{my_plant.image_url}")
-                print(f"📅 Следующий полив: автоматически запланирован.")
+            # проверяем задачу в календаре
+            from database.models import CareCalendar
+            task = db.query(CareCalendar).filter_by(plant_id=my_plant.plant_id).first()
+            if task:
+                print(f"📅 Календарь: Запланирован {task.task_type} на {task.scheduled_date}")
         else:
-            print(f"❌ Ошибка на этапе каталога: {err}")
+            print(f"❌ Ошибка создания: {err}")
 
     except Exception as e:
         print(f"‼️ Сбой теста: {e}")

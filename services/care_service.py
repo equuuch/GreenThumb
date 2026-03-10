@@ -64,7 +64,7 @@ class CareService:
         try:
             db.add(new_task)
             db.commit()
-            return new_task, "Задача выполнена. Следующий полив запланирован."
+            return new_task, None 
         except Exception as e:
             db.rollback()
             return None, f"Ошибка при планировании: {str(e)}."
