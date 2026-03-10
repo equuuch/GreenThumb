@@ -11,11 +11,12 @@ def HomeView(page: ft.Page, nav):
         ft.Text("Ваш проводник в мире растений", size=14, color="gray")
     ], spacing=0)
 
-    # ПОИСК (Заглушка для Smart Search)
+    # ПОИСК
     search_field = ft.TextField(
         hint_text="Найти растение (например, Монстера)...",
         border_radius=15, bgcolor="white",
         prefix_icon=ft.Icons.SEARCH,
+        # ВАЖНО: Переход на маршрут поиска при нажатии Enter
         on_submit=lambda e: nav(f"/search?q={e.control.value}")
     )
 
@@ -24,7 +25,6 @@ def HomeView(page: ft.Page, nav):
             bgcolor="white", padding=15, border_radius=25,
             shadow=ft.BoxShadow(blur_radius=15, color=ft.Colors.BLACK_12),
             col={"xs": 6, "sm": 6},
-            # Переход по ID
             on_click=lambda _: nav(f"/reference/{cat_id}"),
             content=ft.Column([
                 ft.Image(src=img, height=120, fit="contain"),
@@ -33,7 +33,6 @@ def HomeView(page: ft.Page, nav):
             ], horizontal_alignment="center")
         )
 
-    # Сетка популярных растений (ID 1, 2, 3 должны быть в базе)
     grid = ft.ResponsiveRow(spacing=20, controls=[
         create_card("Алоэ", "/aloe.png", 1),
         create_card("Хризантема", "/hrizantema.png", 2),

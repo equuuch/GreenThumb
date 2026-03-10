@@ -11,6 +11,8 @@ from views.profile_view import ProfileView
 from views.reference_view import ReferenceView
 from views.analytics_view import AnalyticsView
 from views.my_plant_details_view import MyPlantDetailsView
+from views.search_view import SearchView # ДОБАВЛЕНО
+from urllib.parse import unquote # ДОБАВЛЕНО
 
 # Попытка импорта NavBar (если файла нет, будет None)
 try:
@@ -59,7 +61,17 @@ def main(page: ft.Page):
                     print("ОШИБКА: Неверный ID в ссылке")
                     v = HomeView(page, navigate)
 
-            # 2. Стандартные маршруты
+            # 2. Логика поиска (ДОБАВЛЕНО)
+            elif page.route.startswith("/search"):
+                try:
+                    # Извлекаем текст запроса и декодируем его
+                    query = unquote(page.route.split("q=")[-1])
+                    v = SearchView(page, navigate, query, USER_STATE)
+                except Exception as ex:
+                    print(f"ОШИБКА ПОИСКА: {ex}")
+                    v = HomeView(page, navigate)
+
+            # 3. Стандартные маршруты
             elif page.route == "/auth":
                 v = AuthView(page, navigate, USER_STATE)
             
@@ -90,8 +102,8 @@ def main(page: ft.Page):
                 v = HomeView(page, navigate)
 
             # --- НАСТРОЙКА NAVBAR ---
-            # Скрываем NavBar на Гостевом экране, Авторизации и Деталях
-            hide_nav_on = ["/", "/auth", "/my_plant_details", "/analytics"]
+            # Скрываем NavBar на Гостевом экране, Авторизации, Деталях и ПОИСКЕ
+            hide_nav_on = ["/", "/auth", "/my_plant_details", "/analytics", "/search"]
             
             # Проверяем, не начинается ли маршрут с /reference/ (там тоже обычно нет меню)
             is_reference = page.route.startswith("/reference/")
