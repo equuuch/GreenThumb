@@ -6,43 +6,51 @@ def HomeView(page: ft.Page, nav):
     view.bgcolor = "#F9F9F9"
     view.padding = 20
     
-    header = ft.Column(
-        controls=[
-            ft.Text("Добро пожаловать в\nGreenThumb", size=24, weight="bold", color="black"),
-            ft.Text("Ознакомьтесь с нашей\nбиблиотекой растений", size=14, color="#6E6E6E")
-        ],
-        spacing=5
+    header = ft.Column([
+        ft.Text("GreenThumb", size=28, weight="bold", color="#009753"),
+        ft.Text("Ваш проводник в мире растений", size=14, color="gray")
+    ], spacing=0)
+
+    # ПОИСК (Заглушка для Smart Search)
+    search_field = ft.TextField(
+        hint_text="Найти растение (например, Монстера)...",
+        border_radius=15, bgcolor="white",
+        prefix_icon=ft.Icons.SEARCH,
+        on_submit=lambda e: nav(f"/search?q={e.control.value}")
     )
 
-    def create_card(name, img):
+    def create_card(name, img, cat_id):
         return ft.Container(
-            bgcolor="white", padding=10, border_radius=20,
-            shadow=ft.BoxShadow(blur_radius=10, color=ft.Colors.BLACK12),
+            bgcolor="white", padding=15, border_radius=25,
+            shadow=ft.BoxShadow(blur_radius=15, color=ft.Colors.BLACK_12),
             col={"xs": 6, "sm": 6},
-            content=ft.Column(controls=[
-                ft.Image(src=img, width=150, height=130, fit="cover", border_radius=15),
-                ft.Text(name, weight="bold", size=14, color="black"),
-            ])
+            # Переход по ID
+            on_click=lambda _: nav(f"/reference/{cat_id}"),
+            content=ft.Column([
+                ft.Image(src=img, height=120, fit="contain"),
+                ft.Text(name, weight="bold", size=16, color="black"),
+                ft.Text("Справочник", size=12, color="#009753")
+            ], horizontal_alignment="center")
         )
 
-    grid = ft.ResponsiveRow(spacing=15, run_spacing=15)
-    grid.controls.append(create_card("Алоэ", "/aloe.png"))
-    grid.controls.append(create_card("Хризантема", "/hrizantema.png"))
-    grid.controls.append(create_card("Роза", "/rose.png"))
-    grid.controls.append(create_card("Гибискус", "/hibiscus.png"))
+    # Сетка популярных растений (ID 1, 2, 3 должны быть в базе)
+    grid = ft.ResponsiveRow(spacing=20, controls=[
+        create_card("Алоэ", "/aloe.png", 1),
+        create_card("Хризантема", "/hrizantema.png", 2),
+        create_card("Роза", "/rose.png", 3),
+        create_card("Ландыш", "/aloe.png", 4),
+    ])
 
-    btn = ft.Container(
-        bgcolor="#009753", padding=15, border_radius=20, alignment=ft.Alignment(0, 0),
-        on_click=lambda _: nav("/auth"),
-        content=ft.Text("Зарегистрируйтесь или войдите,\nчтобы следить за своей коллекцией", color="white", weight="bold", text_align="center")
+    cta_btn = ft.ElevatedButton(
+        "Зарегистрироваться, чтобы создать сад",
+        bgcolor="#009753", color="white",
+        width=float("inf"), height=50,
+        style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=15)),
+        on_click=lambda _: nav("/auth")
     )
 
-    lv = ft.ListView(expand=True)
-    lv.controls.append(header)
-    lv.controls.append(ft.Container(height=20))
-    lv.controls.append(grid)
-    lv.controls.append(ft.Container(height=20))
-    lv.controls.append(btn)
-
+    lv = ft.ListView(expand=True, spacing=30)
+    lv.controls.extend([header, search_field, grid, cta_btn])
+    
     view.controls.append(lv)
     return view
