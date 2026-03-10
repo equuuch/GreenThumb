@@ -8,47 +8,49 @@ from services.ai_services import GigaChatService
 def ScannerView(page: ft.Page, nav, user_state):
     ui_state = {"image_bytes": None, "catalog_data": None}
 
-    # Логика уведомлений
     def show_msg(text, color="red"):
         page.snack_bar = ft.SnackBar(content=ft.Text(text, color="white"), bgcolor=color)
         page.snack_bar.open = True
         page.update()
 
-    # Обработка выбора файла
     def on_file_picked(e: ft.FilePickerResultEvent):
         if e.files:
             try:
+                # В 0.25.2 путь к файлу берется именно так
                 with open(e.files[0].path, "rb") as f:
                     ui_state["image_bytes"] = f.read()
                 
-                # Обновляем превью
                 main_image.src_base64 = base64.b64encode(ui_state["image_bytes"]).decode("utf-8")
                 loading_ring.visible = True
                 page.update()
                 
-                # Запуск ИИ в отдельном потоке
                 threading.Thread(target=process_image_with_ai, daemon=True).start()
             except Exception as ex:
                 show_msg(f"Ошибка загрузки: {ex}")
 
-    # Пикер создается и сразу добавляется в overlay
+    # ВАЖНО: Создаем и регистрируем пикер ДО сборки UI
     file_picker = ft.FilePicker(on_result=on_file_picked)
     page.overlay.append(file_picker)
+    page.update() # Принудительно регистрируем его в системе
 
     def process_image_with_ai():
         ai = GigaChatService()
-        u_id = user_state["id"] or 1
-        with next(get_db()) as db:
-            result, err = ai.identify_plant_photo(db, u_id, ui_state["image_bytes"])
+        u_id = user_state.get("id") or 1
+        try:
+            with next(get_db()) as db:
+                result, err = ai.identify_plant_photo(db, u_id, ui_state["image_bytes"])
+                loading_ring.visible = False
+                if err: 
+                    show_msg(err)
+                elif result:
+                    ui_state["catalog_data"] = result
+                    populate_sheet(result)
+                page.update()
+        except Exception as e:
             loading_ring.visible = False
-            if err: 
-                show_msg(err)
-            elif result:
-                ui_state["catalog_data"] = result
-                populate_sheet(result)
+            show_msg(f"Ошибка ИИ: {e}")
             page.update()
 
-    # UI элементы (синтаксис 0.25.2)
     main_image = ft.Image(src="https://picsum.photos/800/1200", fit=ft.ImageFit.COVER)
     loading_ring = ft.ProgressRing(visible=False, color="#009753")
     
@@ -77,36 +79,46 @@ def ScannerView(page: ft.Page, nav, user_state):
                 on_click=lambda _: save_plant()
             )
         ]
-        sheet_container.offset = ft.Offset(0, 0.3) # Приоткрываем плашку
+        sheet_container.offset = ft.Offset(0, 0.3)
         page.update()
 
     def save_plant():
         if not ui_state["catalog_data"]: return
         with next(get_db()) as db:
             PlantService.confirm_and_create_plant(
-                db, user_state["id"] or 1, ui_state["catalog_data"], 
+                db, user_state.get("id") or 1, ui_state["catalog_data"], 
                 image_bytes=ui_state["image_bytes"]
             )
             nav("/my_plants")
 
-    # Сборка экрана
+    # Сборка экрана с использованием Stack на весь экран
     return ft.View(
         route="/scanner",
         padding=0,
         controls=[
             ft.Stack(
-                expand=True, 
+                expand=True, # Обязательно для Stack во весь экран
                 controls=[
+                    # Фоновое изображение
                     ft.Container(expand=True, bgcolor="black", content=main_image),
+                    
+                    # Индикатор загрузки
                     ft.Container(content=loading_ring, alignment=ft.alignment.center),
-                    ft.FloatingActionButton(
-                        icon=ft.icons.CAMERA_ALT, 
-                        bgcolor="#009753", 
+                    
+                    # Плашка с информацией (снизу)
+                    ft.Container(content=sheet_container, bottom=0, left=0, right=0),
+                    
+                    # Кнопка камеры (позиционируем через Container в Stack)
+                    ft.Container(
+                        content=ft.FloatingActionButton(
+                            icon=ft.icons.CAMERA_ALT, 
+                            bgcolor="#009753",
+                            # Вызываем pick_files через лямбду
+                            on_click=lambda _: file_picker.pick_files()
+                        ),
                         bottom=140, 
-                        right=20, 
-                        on_click=lambda _: file_picker.pick_files()
-                    ),
-                    ft.Container(content=sheet_container, bottom=0, left=0, right=0)
+                        right=20
+                    )
                 ]
             )
         ]
