@@ -42,7 +42,7 @@ def UserHomeView(page: ft.Page, nav, user_state):
             grid.controls.append(
                 ft.Container(
                     bgcolor="white", padding=10, border_radius=20, col=6,
-                    shadow=ft.BoxShadow(blur_radius=10, color=ft.Colors.BLACK_12),
+                    shadow=ft.BoxShadow(blur_radius=10, color="black12"),
                     on_click=lambda _: nav("/my_plants"),
                     content=ft.Column([
                         ft.Image(src=img_path, width=150, height=110, fit="cover", border_radius=15),
@@ -69,7 +69,7 @@ def UserHomeView(page: ft.Page, nav, user_state):
 
     tasks_container = ft.Container(
         bgcolor="white", padding=20, border_radius=25,
-        shadow=ft.BoxShadow(blur_radius=15, color=ft.Colors.BLACK_12),
+        shadow=ft.BoxShadow(blur_radius=15, color="black12"),
         content=ft.Column([
             ft.Text("Сегодняшние задачи", size=18, weight="bold", color="black"),
             ft.Divider(height=1, color="#EEEEEE"),

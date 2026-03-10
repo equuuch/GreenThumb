@@ -5,7 +5,7 @@ from database.models import PlantCatalog
 def ReferenceView(page: ft.Page, nav, catalog_id, user_state):
     view = ft.View()
     view.route = f"/reference/{catalog_id}"
-    view.bgcolor = ft.Colors.WHITE
+    view.bgcolor = ft.colors.WHITE
     view.padding = 0 # Для красивой шапки
 
     # 1. Загрузка данных из эталонного справочника

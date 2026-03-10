@@ -6,7 +6,7 @@ from services.auth_service import AuthService
 def AuthView(page: ft.Page, nav, user_state, is_register_mode=False):
     view = ft.View()
     view.route = "/auth"
-    view.bgcolor = ft.Colors.WHITE
+    view.bgcolor = ft.colors.WHITE
     view.padding = 0
     view.scroll = ft.ScrollMode.AUTO 
 
@@ -14,9 +14,9 @@ def AuthView(page: ft.Page, nav, user_state, is_register_mode=False):
     # Если is_register_mode=True, то is_login будет False (откроется регистрация)
     ui_state = {"is_login": not is_register_mode}
 
-    def show_msg(text, color=ft.Colors.RED):
+    def show_msg(text, color=ft.colors.RED):
         page.snack_bar = ft.SnackBar(
-            content=ft.Text(text, color=ft.Colors.WHITE),
+            content=ft.Text(text, color=ft.colors.WHITE),
             bgcolor=color
         )
         page.snack_bar.open = True
@@ -27,17 +27,17 @@ def AuthView(page: ft.Page, nav, user_state, is_register_mode=False):
     name_input = ft.TextField(
         label="Имя", visible=not ui_state["is_login"], border_radius=15, bgcolor="#F9F9F9",
         border_color="#E0E0E0", focused_border_color="#009753",
-        color=ft.Colors.BLACK
+        color=ft.colors.BLACK
     )
     email_input = ft.TextField(
         label="Почта", border_radius=15, bgcolor="#F9F9F9",
         border_color="#E0E0E0", focused_border_color="#009753",
-        color=ft.Colors.BLACK, value="test@mail.ru"
+        color=ft.colors.BLACK, value="test@mail.ru"
     )
     password_input = ft.TextField(
         label="Пароль", password=True, can_reveal_password=True,
         border_radius=15, bgcolor="#F9F9F9", border_color="#E0E0E0",
-        focused_border_color="#009753", color=ft.Colors.BLACK, value="123"
+        focused_border_color="#009753", color=ft.colors.BLACK, value="123"
     )
 
     # НАСТРАИВАЕМ ТЕКСТЫ ПО УМОЛЧАНИЮ В ЗАВИСИМОСТИ ОТ РЕЖИМА
@@ -46,9 +46,9 @@ def AuthView(page: ft.Page, nav, user_state, is_register_mode=False):
     initial_hint = "Нет аккаунта?" if ui_state["is_login"] else "Уже есть аккаунт?"
     initial_link = "Зарегистрируйтесь" if ui_state["is_login"] else "Войдите в систему"
 
-    title_txt = ft.Text(value=initial_title, size=28, weight="bold", color=ft.Colors.BLACK)
-    submit_btn_txt = ft.Text(value=initial_btn, color=ft.Colors.WHITE, weight="bold", size=16)
-    toggle_hint = ft.Text(initial_hint, color=ft.Colors.BLACK)
+    title_txt = ft.Text(value=initial_title, size=28, weight="bold", color=ft.colors.BLACK)
+    submit_btn_txt = ft.Text(value=initial_btn, color=ft.colors.WHITE, weight="bold", size=16)
+    toggle_hint = ft.Text(initial_hint, color=ft.colors.BLACK)
     toggle_link = ft.Text(initial_link, color="#009753", weight="bold")
 
     def toggle_mode(e):

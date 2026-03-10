@@ -56,7 +56,7 @@ def ProfileView(page: ft.Page, nav, user_state):
         bgcolor="white",
         padding=25,
         border_radius=30,
-        shadow=ft.BoxShadow(blur_radius=15, color=ft.Colors.BLACK12)
+        shadow=ft.BoxShadow(blur_radius=15, color=ft.colors.BLACK12)
     )
 
     # --- СПИСОК РАСТЕНИЙ ---

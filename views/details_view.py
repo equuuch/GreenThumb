@@ -4,7 +4,7 @@ def DetailsView(page: ft.Page, nav):
     # 1. Инициализация View по правилам 0.81.0
     view = ft.View()
     view.route = "/details"
-    view.bgcolor = ft.Colors.WHITE
+    view.bgcolor = ft.colors.WHITE
     view.padding = 0
 
     # Шапка (Кнопка назад теперь ведет на /scanner)
@@ -13,7 +13,7 @@ def DetailsView(page: ft.Page, nav):
             controls=[
                 ft.IconButton(
                     icon=ft.Icons.ARROW_BACK_IOS_NEW, 
-                    icon_color=ft.Colors.BLACK, 
+                    icon_color=ft.colors.BLACK, 
                     # ИЗМЕНЕНИЕ ЗДЕСЬ: Возврат на сканер (камеру)
                     on_click=lambda _: nav("/scanner") 
                 ),
@@ -21,13 +21,13 @@ def DetailsView(page: ft.Page, nav):
                     value="GreenThumb", 
                     weight="bold", 
                     size=18, 
-                    color=ft.Colors.BLACK,
+                    color=ft.colors.BLACK,
                     expand=True,
                     text_align="center"
                 ),
                 ft.IconButton(
                     icon=ft.Icons.INFO_OUTLINE, 
-                    icon_color=ft.Colors.BLACK
+                    icon_color=ft.colors.BLACK
                 )
             ],
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN
@@ -63,7 +63,7 @@ def DetailsView(page: ft.Page, nav):
                 ft.Icon(icon, color="#009753", size=28),
                 ft.Column(
                     controls=[
-                        ft.Text(value=label, color=ft.Colors.BLACK, size=15, weight="w500"),
+                        ft.Text(value=label, color=ft.colors.BLACK, size=15, weight="w500"),
                         progress_bar
                     ],
                     expand=True,
@@ -96,7 +96,7 @@ def DetailsView(page: ft.Page, nav):
                     value="Ландыш", 
                     size=32, 
                     weight="bold", 
-                    color=ft.Colors.BLACK
+                    color=ft.colors.BLACK
                 ),
                 ft.Container(height=10),
                 

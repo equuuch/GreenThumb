@@ -1,138 +1,113 @@
 import flet as ft
+import threading
+import base64
+from database.session import get_db
+from services.plant_services import PlantService
+from services.ai_services import GigaChatService
 
-def ScannerView(page: ft.Page, nav):
-    # 1. Создаем объект View строго по правилам 0.81.0
-    view = ft.View()
-    view.route = "/scanner"
-    view.bgcolor = ft.Colors.BLACK
-    view.padding = 0
+def ScannerView(page: ft.Page, nav, user_state):
+    ui_state = {"image_bytes": None, "catalog_data": None}
 
-    # Контейнер для выезжающего меню
-    sheet_container = ft.Container()
-    sheet_container.bgcolor = "#E8E8E8"
-    sheet_container.padding = 30
-    sheet_container.border_radius = ft.border_radius.only(top_left=30, top_right=30)
-    sheet_container.width = 1000 # Большая ширина, чтобы перекрыть экран
-    sheet_container.height = 450 
+    # Логика уведомлений
+    def show_msg(text, color="red"):
+        page.snack_bar = ft.SnackBar(content=ft.Text(text, color="white"), bgcolor=color)
+        page.snack_bar.open = True
+        page.update()
 
-    # Начальное положение (скрыто внизу)
-    sheet_container.offset = ft.Offset(0, 0.85)
-    sheet_container.animate_offset = ft.Animation(600, "decelerate")
+    # Обработка выбора файла
+    def on_file_picked(e: ft.FilePickerResultEvent):
+        if e.files:
+            try:
+                with open(e.files[0].path, "rb") as f:
+                    ui_state["image_bytes"] = f.read()
+                
+                # Обновляем превью
+                main_image.src_base64 = base64.b64encode(ui_state["image_bytes"]).decode("utf-8")
+                loading_ring.visible = True
+                page.update()
+                
+                # Запуск ИИ в отдельном потоке
+                threading.Thread(target=process_image_with_ai, daemon=True).start()
+            except Exception as ex:
+                show_msg(f"Ошибка загрузки: {ex}")
 
-    def toggle_menu(e):
-        # Если внизу - поднимаем, если вверху - опускаем
-        if sheet_container.offset.y == 0.85:
-            sheet_container.offset = ft.Offset(0, 0)
-        else:
-            sheet_container.offset = ft.Offset(0, 0.85)
-        sheet_container.update()
+    # Пикер создается и сразу добавляется в overlay
+    file_picker = ft.FilePicker(on_result=on_file_picked)
+    page.overlay.append(file_picker)
 
-    # Вспомогательная функция для прогресс-баров (используем int для expand)
-    def create_stat(icon, label, val):
-        green = int(val * 10)
-        gray = 10 - green
-        
-        bar_row = ft.Row(spacing=0)
-        bar_row.controls.append(ft.Container(bgcolor="#009753", height=8, expand=green, border_radius=4))
-        bar_row.controls.append(ft.Container(bgcolor="#D0D0D0", height=8, expand=gray, border_radius=4))
-        
-        return ft.Row(
-            controls=[
-                ft.Icon(icon, color="#009753", size=24),
-                ft.Column(
-                    controls=[
-                        ft.Text(value=label, color=ft.Colors.BLACK, size=14, weight="bold"),
-                        bar_row
-                    ],
-                    expand=True,
-                    spacing=5
-                )
-            ],
-            spacing=15
-        )
+    def process_image_with_ai():
+        ai = GigaChatService()
+        u_id = user_state["id"] or 1
+        with next(get_db()) as db:
+            result, err = ai.identify_plant_photo(db, u_id, ui_state["image_bytes"])
+            loading_ring.visible = False
+            if err: 
+                show_msg(err)
+            elif result:
+                ui_state["catalog_data"] = result
+                populate_sheet(result)
+            page.update()
 
-    # Контент внутри меню
+    # UI элементы (синтаксис 0.25.2)
+    main_image = ft.Image(src="https://picsum.photos/800/1200", fit=ft.ImageFit.COVER)
+    loading_ring = ft.ProgressRing(visible=False, color="#009753")
+    
+    sheet_container = ft.Container(
+        bgcolor="#F4F4F4", 
+        padding=30, 
+        width=1000, 
+        height=450,
+        border_radius=ft.border_radius.only(top_left=30, top_right=30),
+        offset=ft.Offset(0, 0.85), 
+        animate_offset=ft.animation.Animation(600, ft.AnimationCurve.DECELERATE)
+    )
     sheet_col = ft.Column(horizontal_alignment=ft.CrossAxisAlignment.CENTER)
-    
-    # Кликабельная шапка меню (индикатор свайпа)
-    swipe_handle = ft.Container(
-        width=40, height=4, bgcolor=ft.Colors.WHITE, border_radius=2,
-        on_click=toggle_menu
-    )
-    
-    sheet_col.controls.append(swipe_handle)
-    sheet_col.controls.append(ft.Container(height=10))
-    sheet_col.controls.append(ft.Text(value="Ландыш", size=26, weight="bold", color=ft.Colors.BLACK))
-    sheet_col.controls.append(ft.Container(height=10))
-    sheet_col.controls.append(create_stat(ft.Icons.WATER_DROP_OUTLINED, "Содержание воды", 0.5))
-    sheet_col.controls.append(ft.Container(height=10))
-    sheet_col.controls.append(create_stat(ft.Icons.WB_SUNNY_OUTLINED, "Уровень освещенности", 0.7))
-    sheet_col.controls.append(ft.Container(height=10))
-    sheet_col.controls.append(create_stat(ft.Icons.FAVORITE_BORDER, "Состояние растения", 0.4))
-    sheet_col.controls.append(ft.Container(height=20))
-    
-    # Кнопка перехода в паспорт
-    passport_btn = ft.Container(
-        content=ft.Text(value="Открыть паспорт растения", color=ft.Colors.WHITE, weight="bold"),
-        bgcolor="#009753",
-        padding=15,
-        border_radius=15,
-        alignment=ft.Alignment(0, 0), # Замена ft.alignment.center
-        on_click=lambda _: nav("/details")
-    )
-    sheet_col.controls.append(passport_btn)
-    
     sheet_container.content = sheet_col
 
-    # --- ВЕРХНЯЯ ПАНЕЛЬ ---
-    header = ft.Container(
-        padding=ft.padding.only(top=40, left=10, right=10),
-        bgcolor=ft.Colors.BLACK38,
-        content=ft.Row(
-            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-            controls=[
-                ft.IconButton(
-                    icon=ft.Icons.ARROW_BACK_IOS_NEW, 
-                    icon_color=ft.Colors.WHITE, 
-                    on_click=lambda _: nav("/my_plants")
-                ),
-                ft.Text(value="Сканирование", color=ft.Colors.WHITE, weight="bold", size=18),
-                ft.IconButton(
-                    icon=ft.Icons.INFO_OUTLINE, 
-                    icon_color=ft.Colors.WHITE, 
-                    on_click=lambda _: nav("/reference")
-                ),
-            ]
-        )
-    )
+    def populate_sheet(data):
+        sheet_col.controls = [
+            ft.Container(width=40, height=4, bgcolor="grey300", border_radius=2),
+            ft.Text(data.get('species_name', 'Растение'), size=24, weight="bold", color="black"),
+            ft.Text("Обнаружено ИИ", size=14, color="grey600"),
+            ft.Divider(height=20, color="transparent"),
+            ft.ElevatedButton(
+                "Добавить в мой сад", 
+                bgcolor="#009753", 
+                color="white", 
+                on_click=lambda _: save_plant()
+            )
+        ]
+        sheet_container.offset = ft.Offset(0, 0.3) # Приоткрываем плашку
+        page.update()
 
-    # --- КНОПКА СКАНЕРА ---
-    scan_trigger = ft.Container(
-        content=ft.FloatingActionButton(
-            icon=ft.Icons.QR_CODE_SCANNER, 
-            bgcolor="#009753", 
-            on_click=toggle_menu
-        ),
-        bottom=140,
-        right=20
-    )
+    def save_plant():
+        if not ui_state["catalog_data"]: return
+        with next(get_db()) as db:
+            PlantService.confirm_and_create_plant(
+                db, user_state["id"] or 1, ui_state["catalog_data"], 
+                image_bytes=ui_state["image_bytes"]
+            )
+            nav("/my_plants")
 
-    # --- СБОРКА ЧЕРЕЗ STACK ---
-    main_stack = ft.Stack(expand=True)
-    # Имитация камеры
-    main_stack.controls.append(
-        ft.Container(
-            expand=True, 
-            bgcolor=ft.Colors.BLACK, 
-            content=ft.Image(src="https://picsum.photos/800/1200", fit="cover")
-        )
+    # Сборка экрана
+    return ft.View(
+        route="/scanner",
+        padding=0,
+        controls=[
+            ft.Stack(
+                expand=True, 
+                controls=[
+                    ft.Container(expand=True, bgcolor="black", content=main_image),
+                    ft.Container(content=loading_ring, alignment=ft.alignment.center),
+                    ft.FloatingActionButton(
+                        icon=ft.icons.CAMERA_ALT, 
+                        bgcolor="#009753", 
+                        bottom=140, 
+                        right=20, 
+                        on_click=lambda _: file_picker.pick_files()
+                    ),
+                    ft.Container(content=sheet_container, bottom=0, left=0, right=0)
+                ]
+            )
+        ]
     )
-    main_stack.controls.append(header)
-    main_stack.controls.append(scan_trigger)
-    # Оборачиваем меню в контейнер для позиционирования внизу
-    main_stack.controls.append(
-        ft.Container(content=sheet_container, bottom=0, left=0, right=0)
-    )
-
-    view.controls.append(main_stack)
-    return view

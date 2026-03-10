@@ -3,7 +3,7 @@ import flet as ft
 def MyPlantDetailsView(page: ft.Page, nav, user_state):
     view = ft.View()
     view.route = "/my_plant_details"
-    view.bgcolor = ft.Colors.WHITE
+    view.bgcolor = ft.colors.WHITE
     view.padding = 0
 
     # Шапка

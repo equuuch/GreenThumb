@@ -7,7 +7,7 @@ from services.ai_services import GigaChatService
 def SearchView(page: ft.Page, nav, query, user_state):
     view = ft.View()
     view.route = f"/search?q={query}"
-    view.bgcolor = ft.Colors.WHITE
+    view.bgcolor = ft.colors.WHITE
     view.vertical_alignment = ft.MainAxisAlignment.CENTER
     view.horizontal_alignment = ft.CrossAxisAlignment.CENTER
 

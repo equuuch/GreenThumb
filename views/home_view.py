@@ -24,7 +24,7 @@ def HomeView(page: ft.Page, nav):
     def create_card(name, img, cat_id):
         return ft.Container(
             bgcolor="white", padding=15, border_radius=25,
-            shadow=ft.BoxShadow(blur_radius=15, color=ft.Colors.BLACK_12),
+            shadow=ft.BoxShadow(blur_radius=15, color="black12"),
             col={"xs": 6, "sm": 6},
             # Переход по РЕАЛЬНОМУ ID из базы
             on_click=lambda _: nav(f"/reference/{cat_id}"),

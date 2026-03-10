@@ -35,7 +35,7 @@ def main(page: ft.Page):
         else:
             # Главная
             page.views.append(create_base_view("/", [
-                ft.Text("Главная: Твой сад", size=24, weight="bold", color=ft.Colors.BLACK),
+                ft.Text("Главная: Твой сад", size=24, weight="bold", color=ft.colors.BLACK),
                 ft.Button("Выйти", on_click=lambda _: page.go("/auth"))
             ]))
             

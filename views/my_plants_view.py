@@ -27,7 +27,7 @@ def MyPlantsView(page: ft.Page, nav, user_state):
         img_path = f"uploads/{plant_obj.image_url}" if plant_obj.image_url else "/aloe.png"
         return ft.Container(
             bgcolor="white", padding=10, border_radius=20,
-            shadow=ft.BoxShadow(blur_radius=10, color=ft.Colors.BLACK_12),
+            shadow=ft.BoxShadow(blur_radius=10, color="black12"),
             col={"xs": 6, "sm": 6},
             on_click=lambda _: nav("/my_plant_details"),
             content=ft.Column([
