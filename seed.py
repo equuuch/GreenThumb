@@ -1,89 +1,77 @@
-import json
-from database.session import SessionLocal, init_db
-from database.models import PlantCatalog, PlantAlias
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-INITIAL_PLANTS = [
-    {
-        "species_name": "Ландыш",
-        "latin_name": "Convallaria majalis",
-        "description": "Травянистое цветковое растение с ароматными белыми колокольчатыми цветками.",
-        "default_watering_interval": 7,
-        "default_light_level": 0.5,
-        "aliases": ["ландыш", "конваллярия", "ландыш майский", "колокольчики", "лесной колокольчик"]
-    },
-    {
-        "species_name": "Монстера Деликатесная",
-        "latin_name": "Monstera deliciosa",
-        "description": "Крупная лиана с характерными перфорированными листьями. Любит влажность.",
-        "default_watering_interval": 10,
-        "default_light_level": 0.6,
-        "aliases": ["монстера", "монстера привлекательная", "дырявый цветок", "монстера деликатесная", "филодендрон дырявый"]
-    },
-    {
-        "species_name": "Сансевиерия",
-        "latin_name": "Sansevieria trifasciata",
-        "description": "Неприхотливое растение, известное как 'Щучий хвост'. Выдерживает тень.",
-        "default_watering_interval": 21,
-        "default_light_level": 0.3,
-        "aliases": ["тещин язык", "щучий хвост", "санса", "сансивьерия", "змеиная кожа", "меч", "индийский меч"]
-    },
-    {
-        "species_name": "Томат Черри",
-        "latin_name": "Solanum lycopersicum",
-        "description": "Скороспелый сорт для домашнего и садового выращивания. Требует много света.",
-        "default_watering_interval": 3,
-        "default_light_level": 0.9,
-        "aliases": ["помидорки", "черри", "томаты", "вишневидный томат", "черри на подоконнике", "помидорчики"]
-    },
-    {
-        "species_name": "Фикус Бенджамина",
-        "latin_name": "Ficus benjamina",
-        "description": "Популярное комнатное дерево с мелкими листьями. Чувствителен к перестановке.",
-        "default_watering_interval": 7,
-        "default_light_level": 0.7,
-        "aliases": ["фикус", "бенджамин", "фикус бенджамина", "плакучее дерево", "фикус мелколистный"]
-    },
-    {
-        "species_name": "Алоэ Вера",
-        "latin_name": "Aloe barbadensis",
-        "description": "Суккулент с целебными свойствами. Хранит запас влаги в толстых листьях.",
-        "default_watering_interval": 14,
-        "default_light_level": 0.8,
-        "aliases": ["алоэ", "столетник", "алое", "лекарственный алоэ", "алоэ вера", "доктор"]
-    }
-]
+# Дальше твои старые импорты
+from database.session import init_db, SessionLocal
+# ... и так далее
+from database.session import init_db, SessionLocal
+from database.models import User, PlantCatalog, Plant
+import datetime
 
-def seed_database():
+def seed_data():
     init_db()
     db = SessionLocal()
-    
-    try:
-        for plant_data in INITIAL_PLANTS:
-            exists = db.query(PlantCatalog).filter_by(species_name=plant_data["species_name"]).first()
-            if not exists:
-                new_plant = PlantCatalog(
-                    species_name=plant_data["species_name"],
-                    latin_name=plant_data["latin_name"],
-                    description=plant_data["description"],
-                    default_watering_interval=plant_data["default_watering_interval"],
-                    default_light_level=plant_data["default_light_level"]
-                )
-                db.add(new_plant)
-                db.flush()
-                
-                for alias_name in plant_data["aliases"]:
-                    new_alias = PlantAlias(
-                        user_input=alias_name.lower(),
-                        catalog_id=new_plant.catalog_id
-                    )
-                    db.add(new_alias)
-        
+
+    # 1. Создаем пользователя
+    if not db.query(User).filter_by(email="test@mail.ru").first():
+        user = User(
+            email="test@mail.ru",
+            password_hash="123", # Простой пароль
+            first_name="Шахзод"
+        )
+        db.add(user)
         db.commit()
-    except Exception as e:
-        db.rollback()
-        print(f"Error: {e}")
-    finally:
-        db.close()
+        print("✅ Пользователь создан (test@mail.ru / 123)")
+    
+    user = db.query(User).filter_by(email="test@mail.ru").first()
+
+    # 2. Создаем Каталог (Справочник)
+    catalog_data = [
+        {"name": "Алоэ", "img": "/aloe.png", "water": 7},
+        {"name": "Петрушка", "img": "/petrushka.png", "water": 3},
+        {"name": "Роза", "img": "/rose.png", "water": 5},
+        {"name": "Гибискус", "img": "/hibiscus.png", "water": 4},
+    ]
+
+    for item in catalog_data:
+        if not db.query(PlantCatalog).filter_by(species_name=item["name"]).first():
+            cat = PlantCatalog(
+                species_name=item["name"],
+                latin_name="Latin Name",
+                description="Test description",
+                default_watering_interval=item["water"],
+                default_light_level=0.5
+            )
+            db.add(cat)
+    db.commit()
+    print("✅ Каталог наполнен")
+
+    # 3. Добавляем растения пользователю
+    # Находим ID каталога
+    aloe_cat = db.query(PlantCatalog).filter_by(species_name="Алоэ").first()
+    petr_cat = db.query(PlantCatalog).filter_by(species_name="Петрушка").first()
+
+    if not db.query(Plant).filter_by(user_id=user.user_id).first():
+        p1 = Plant(
+            user_id=user.user_id,
+            catalog_id=aloe_cat.catalog_id,
+            custom_name="Алоэ",
+            image_url="/aloe.png", # Используем твои ассеты
+            last_watered_at=datetime.datetime.now()
+        )
+        p2 = Plant(
+            user_id=user.user_id,
+            catalog_id=petr_cat.catalog_id,
+            custom_name="Петрушка",
+            image_url="/petrushka.png",
+            last_watered_at=datetime.datetime.now()
+        )
+        db.add_all([p1, p2])
+        db.commit()
+        print("✅ Растения добавлены в сад")
+
+    db.close()
 
 if __name__ == "__main__":
-    seed_database()
+    seed_data()

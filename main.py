@@ -1,60 +1,80 @@
 import flet as ft
+from database.session import init_db
 from views.home_view import HomeView
 from views.user_home_view import UserHomeView
 from views.my_plants_view import MyPlantsView
 from views.details_view import DetailsView
 from views.auth_view import AuthView
+from views.scanner_view import ScannerView
+from views.reference_view import ReferenceView
+from views.profile_view import ProfileView
+from views.analytics_view import AnalyticsView
+from views.my_plant_details_view import MyPlantDetailsView
 from components.nav_bar import NavBar
 
+USER_STATE = {"id": None, "name": "Гость"}
+
 def main(page: ft.Page):
+    init_db()
+
     page.title = "GreenThumb"
     page.theme_mode = ft.ThemeMode.LIGHT
     page.bgcolor = "#F9F9F9"
     page.padding = 0
+    
+    # Настройки адаптива для браузера
+    page.window_width = 400
+    page.window_height = 800
 
-    # 1. РОУТЕР
-    def router(route):
-        page.route = route
-        render_view(None)
+    def navigate(route_str):
+        page.route = route_str
+        handle_route_change(None)
 
-    # 2. ПЕРЕХОДНИК МЕНЮ
-    def on_nav_change(index):
-        home_route = "/user_home" if page.route == "/user_home" else "/"
-        routes = [home_route, "/my_plants", "/details", "/profile"]
-        router(routes[index])
-
-    # 3. ЛОГИКА ОТРИСОВКИ
-    def render_view(e):
+    def handle_route_change(e):
         page.views.clear()
         
-        nav_map = {
-            "/": 0, "/user_home": 0, 
-            "/my_plants": 1, "/details": 2, "/profile": 3
-        }
+        nav_map = {"/user_home": 0, "/my_plants": 1, "/scanner": 2, "/profile": 3}
         current_index = nav_map.get(page.route, 0)
 
-        if page.route == "/auth":
-            view = AuthView(page)
-        elif page.route == "/user_home":
-            view = UserHomeView(page)
-        elif page.route == "/my_plants":
-            view = MyPlantsView(page)
-        elif page.route == "/details":
-            view = DetailsView(page)
-        elif page.route == "/profile":
-            view = ft.View(route="/profile", controls=[ft.Text("Профиль", size=30, color="black")], bgcolor="#F9F9F9")
-        else:
-            view = HomeView(page)
-        
-        if page.route not in ["/", "/auth"]:
-            view.bottom_appbar = NavBar(current_index, on_nav_change)
-        
-        page.views.append(view)
-        page.update()
+        try:
+            if page.route == "/auth":
+                v = AuthView(page, navigate, USER_STATE)
+            elif page.route == "/user_home":
+                v = UserHomeView(page, navigate, USER_STATE)
+            elif page.route == "/my_plants":
+                v = MyPlantsView(page, navigate)
+            elif page.route == "/my_plant_details":
+                v = MyPlantDetailsView(page, navigate, USER_STATE)
+            elif page.route == "/scanner":
+                v = ScannerView(page, navigate)
+            elif page.route == "/profile":
+                v = ProfileView(page, navigate, USER_STATE)
+            elif page.route == "/analytics":
+                v = AnalyticsView(page, navigate)
+            elif page.route == "/details":
+                v = DetailsView(page, navigate)
+            elif page.route == "/reference":
+                v = ReferenceView(page, navigate)
+            else:
+                v = HomeView(page, navigate)
 
-    page.go = router 
-    router("/")
+            # Прячем меню на гостевой, авторизации и деталях
+            no_nav = ["/", "/auth", "/details", "/analytics", "/reference", "/my_plant_details"]
+            
+            if page.route not in no_nav:
+                def on_click(idx):
+                    r = ["/user_home", "/my_plants", "/scanner", "/profile"]
+                    navigate(r[idx])
+                v.bottom_appbar = NavBar(current_index, on_click)
+            
+            page.views.append(v)
+            page.update()
+        except Exception as ex:
+            print(f"Router Error: {ex}")
+
+    page.on_route_change = handle_route_change
+    navigate("/")
 
 if __name__ == "__main__":
-    # ВАЖНО: Добавили assets_dir="assets"
-    ft.app(target=main, assets_dir="assets")
+    # Просто убираем view=ft.AppView.WEB_BROWSER
+    ft.run(main, assets_dir="assets")
