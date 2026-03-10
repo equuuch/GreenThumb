@@ -1,23 +1,6 @@
 import os
 from sqlalchemy.orm import Session
-<<<<<<< HEAD
-from database.models import Plant, PlantCatalog, CareCalendar
 
-class PlantService:
-    @staticmethod
-    def get_user_plants(db: Session, user_id: int):
-        # Получаем растения пользователя вместе с информацией из каталога
-        return db.query(Plant).filter(Plant.user_id == user_id, Plant.is_active == True).all()
-
-    @staticmethod
-    def get_todays_tasks(db: Session, user_id: int):
-        # Заглушка: возвращаем задачи для демонстрации
-        # В будущем здесь будет выборка из CareCalendar по дате
-        return [
-            {"icon": "WATER_DROP", "text": "Полить Петрушку", "color": "#009753"},
-            {"icon": "WB_SUNNY", "text": "Поставить на свет Алоэ", "color": "#E65100"}
-        ]
-=======
 from datetime import datetime, timedelta
 from config import Config
 from database.models import Plant, PlantCatalog, PlantAlias, CareCalendar, GrowthLog
@@ -217,4 +200,4 @@ class PlantService:
         except Exception as e:
             db.rollback()
             return False, f"Ошибка при полном удалении: {str(e)}."
->>>>>>> d777a2f229709411c4e04c16c9dd93f40cfaaf90
+
