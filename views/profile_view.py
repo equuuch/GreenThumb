@@ -1,138 +1,122 @@
 import flet as ft
 from database.session import SessionLocal
 from database.models import User, Plant
-from services.plant_services import PlantService
+from sqlalchemy import desc
 from datetime import datetime
 
 def ProfileView(page: ft.Page, nav, user_state):
     view = ft.View()
     view.route = "/profile"
     view.bgcolor = "#F9F9F9"
-    view.padding = 20
+    view.padding = 0 # Убираем общий паддинг, сделаем его внутри
 
     u_id = user_state.get("id", 1)
 
-    # --- ФУНКЦИЯ ВЫХОДА (ЛОГАУТ) ---
+    # --- ФУНКЦИЯ ВОССТАНОВЛЕНИЯ ИЗ АРХИВА ---
+    def restore_plant(e, plant_id):
+        db = SessionLocal()
+        try:
+            plant = db.query(Plant).filter(Plant.plant_id == plant_id).first()
+            if plant:
+                plant.is_active = True
+                db.commit()
+                # Явный редирект для обновления данных
+                page.go("/user_home") # Сначала на главную, чтобы увидеть результат
+        finally:
+            db.close()
+
     def handle_logout(e):
-        # 1. Сбрасываем стейт
         user_state["id"] = None
         user_state["name"] = "Гость"
-        # 2. Улетаем на начальный экран (HomeView)
-        nav("/")
+        page.go("/")
 
-    # --- ЗАГРУЗКА ДАННЫХ ИЗ БАЗЫ ---
+    # --- ЗАГРУЗКА ДАННЫХ ---
     db = SessionLocal()
     try:
         user_data = db.query(User).filter(User.user_id == u_id).first()
+        user_name = user_data.first_name if user_data and user_data.first_name else "Илья"
         
-        if user_data:
-            user_name = user_data.first_name if user_data.first_name and user_data.first_name.strip() else "Илья"
-        else:
-            user_name = "Илья" 
+        all_plants = db.query(Plant).filter(Plant.user_id == u_id).order_by(desc(Plant.added_at)).all()
+        active_plants = [p for p in all_plants if p.is_active]
+        archived_plants = [p for p in all_plants if not p.is_active]
         
-        my_plants = PlantService.get_user_plants(db, u_id)
-        plants_count = len(my_plants)
-        
-        if user_data and hasattr(user_data, 'created_at') and user_data.created_at:
-            delta = datetime.now() - user_data.created_at
-            days_streak = max(delta.days, 1)
-        else:
-            days_streak = 1
-
-        bad_status_count = sum(1 for p in my_plants if p.status_text and "полив" in p.status_text.lower())
-        health_score = f"{max(100 - (bad_status_count * 20), 0)}%" if plants_count > 0 else "100%"
-
-    except Exception as e:
-        print(f"Profile Database Error: {e}")
-        user_name = "Илья"
-        my_plants, plants_count, days_streak, health_score = [], 0, 1, "—"
+        plants_count = len(active_plants)
+        days_streak = (datetime.now() - user_data.created_at).days + 1 if user_data and user_data.created_at else 1
     finally:
         db.close()
 
-    # --- UI: ШАПКА ПРОФИЛЯ С КНОПКОЙ ВЫХОДА ---
+    # --- UI ЭЛЕМЕНТЫ ---
     profile_header = ft.Container(
-        content=ft.Column(
-            controls=[
-                ft.Row(
-                    controls=[
-                        ft.Row([
-                            ft.Container(
-                                width=70, height=70, border_radius=35, bgcolor="#009753",
-                                content=ft.Text(user_name[0].upper(), color="white", size=28, weight="bold"),
-                                alignment=ft.alignment.center
-                            ),
-                            ft.Column([
-                                ft.Text(value=user_name, size=22, weight="bold", color="black"),
-                                ft.Text(value="Мастер-садовод 🌿", size=14, color="#009753", weight="w500"),
-                            ], spacing=2)
-                        ], expand=True),
-                        # Илья, вот она — кнопка выхода
-                        ft.IconButton(
-                            icon=ft.Icons.LOGOUT_ROUNDED,
-                            icon_color="grey500",
-                            tooltip="Выйти из аккаунта",
-                            on_click=handle_logout
-                        )
-                    ],
-                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN
-                ),
-                ft.Divider(height=30, color="transparent"),
-                # Статистика (Растения, Дни, Здоровье)
-                ft.Row(
-                    controls=[
-                        ft.Column([ft.Text(str(plants_count), weight="bold", size=18, color="black"), ft.Text("Растения", size=12, color="gray")], horizontal_alignment="center"),
-                        ft.Column([ft.Text(str(days_streak), weight="bold", size=18, color="black"), ft.Text("Дней в Green", size=12, color="gray")], horizontal_alignment="center"),
-                        ft.Column([ft.Text(health_score, weight="bold", size=18, color="black"), ft.Text("Здоровье", size=12, color="gray")], horizontal_alignment="center"),
-                    ],
-                    alignment=ft.MainAxisAlignment.SPACE_AROUND
-                )
-            ]
-        ),
-        bgcolor="white", padding=25, border_radius=30,
-        shadow=ft.BoxShadow(blur_radius=15, color=ft.colors.BLACK12)
+        padding=25,
+        bgcolor="white",
+        border_radius=ft.border_radius.only(bottom_left=30, bottom_right=30),
+        shadow=ft.BoxShadow(blur_radius=15, color=ft.Colors.BLACK12),
+        content=ft.Column([
+            ft.Row([
+                ft.Row([
+                    ft.Container(
+                        width=60, height=60, border_radius=30, bgcolor="#009753",
+                        content=ft.Text(user_name[0].upper(), color="white", weight="bold"),
+                        alignment=ft.alignment.center
+                    ),
+                    ft.Column([
+                        ft.Text(user_name, size=20, weight="bold", color="black"),
+                        ft.Text("Мастер-садовод 🌿", size=13, color="#009753"),
+                    ], spacing=0)
+                ], expand=True),
+                ft.IconButton(ft.Icons.LOGOUT_ROUNDED, on_click=handle_logout)
+            ]),
+            ft.Divider(height=20, color="transparent"),
+            ft.Row([
+                ft.Column([ft.Text(str(plants_count), weight="bold"), ft.Text("Растения", size=12)], horizontal_alignment="center"),
+                ft.Column([ft.Text(str(days_streak), weight="bold"), ft.Text("Дней", size=12)], horizontal_alignment="center"),
+                ft.Column([ft.Text("100%", weight="bold"), ft.Text("Здоровье", size=12)], horizontal_alignment="center"),
+            ], alignment=ft.MainAxisAlignment.SPACE_AROUND)
+        ])
     )
 
-    # --- СПИСОК РАСТЕНИЙ (ListView) ---
-    plants_list_container = ft.Column(spacing=12)
-    if not my_plants:
-        plants_list_container.controls.append(
-            ft.Container(
-                content=ft.Column([
-                    ft.Icon(ft.Icons.ENERGY_SAVINGS_LEAF_OUTLINED, size=50, color="grey300"),
-                    ft.Text("Тут пока пусто. Добавьте первое растение!", color="grey400", size=14)
-                ], horizontal_alignment="center"),
-                padding=40, alignment=ft.alignment.center
-            )
-        )
-    else:
-        for p in my_plants:
-            plants_list_container.controls.append(
-                ft.Container(
-                    content=ft.Row([
-                        ft.Container(width=50, height=50, border_radius=12, bgcolor="#F0F4F8", 
-                                     content=ft.Image(src=p.image_url, fit="cover") if p.image_url else ft.Icon(ft.Icons.ECO, color="#009753")),
-                        ft.Column([
-                            ft.Text(value=p.custom_name, size=16, weight="bold", color="black"),
-                            ft.Text(value=p.status_text or "Всё хорошо", size=12, color="orange700" if p.status_text else "#009753"),
-                        ], expand=True, spacing=2),
-                        ft.Icon(ft.Icons.CHEVRON_RIGHT, size=20, color="grey400")
-                    ], spacing=15),
-                    bgcolor="white", padding=16, border_radius=22,
-                    on_click=lambda _, pid=p.plant_id: nav(f"/my_plant_details/{pid}")
-                )
-            )
+    active_list = ft.Column(spacing=10)
+    archive_list = ft.Column(spacing=10, visible=False)
 
-    view.controls.append(
-        ft.ListView(
-            expand=True,
-            padding=ft.padding.only(bottom=100),
-            controls=[
-                profile_header,
-                ft.Container(height=35),
-                ft.Row([ft.Text("Ваша коллекция", size=20, weight="bold", color="black"), ft.Text(f"({plants_count})", color="gray", size=16)], spacing=10),
-                ft.Container(height=15),
-                plants_list_container
-            ]
+    def create_row(p, is_arc):
+        return ft.Container(
+            bgcolor="white", padding=15, border_radius=20,
+            content=ft.Row([
+                ft.Image(src=f"assets/{p.image_url}" if p.image_url else None, width=50, height=50, fit="cover", border_radius=10),
+                ft.Column([
+                    ft.Text(p.custom_name, weight="bold"),
+                    ft.Text("В архиве" if is_arc else "Активно", size=12, color="grey")
+                ], expand=True),
+                ft.IconButton(ft.Icons.UNARCHIVE, icon_color="#009753", on_click=lambda e: restore_plant(e, p.plant_id)) if is_arc 
+                else ft.Icon(ft.Icons.CHEVRON_RIGHT, color="grey")
+            ]),
+            on_click=None if is_arc else lambda _: nav(f"/my_plant_details/{p.plant_id}")
         )
+
+    for p in active_plants: active_list.controls.append(create_row(p, False))
+    for p in archived_plants: archive_list.controls.append(create_row(p, True))
+
+    def change_tab(e):
+        active_list.visible = (e.control.selected_index == 0)
+        archive_list.visible = (e.control.selected_index == 1)
+        page.update()
+
+    tabs = ft.Tabs(selected_index=0, on_change=change_tab, tabs=[ft.Tab(text="Активные"), ft.Tab(text="Архив")])
+
+    # Основной контент скроллится здесь
+    content_scroll = ft.Column(
+        scroll=ft.ScrollMode.ADAPTIVE,
+        expand=True,
+        controls=[
+            profile_header,
+            ft.Container(padding=20, content=ft.Column([
+                tabs,
+                ft.Container(height=10),
+                active_list,
+                archive_list
+            ]))
+        ]
     )
+
+    view.controls.append(content_scroll)
     return view
