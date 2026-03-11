@@ -14,23 +14,22 @@ def MyPlantsView(page: ft.Page, nav, user_state):
     user_id = user_state.get("id") or 1
 
     # 1. ЗАГРУЗКА ДАННЫХ
-    # Используем контекстный менеджер 'with', чтобы сессия закрывалась сразу после чтения
     with next(get_db()) as db:
-        db.expire_all()  # Сбрасываем кэш сессии
+        db.expire_all()
         my_plants = (
             db.query(Plant)
             .options(joinedload(Plant.catalog_info))
             .filter(Plant.user_id == user_id, Plant.is_active == 1)
             .all()
         )
-        # Технический принт для тебя в консоль, чтобы видеть время полива из базы
         for p in my_plants:
             print(f"DEBUG: {p.custom_name} | Last watered: {p.last_watered_at}")
 
+    # ИСПРАВЛЕННАЯ ЛОГИКА ЦВЕТА: теперь 0.5 и выше — это зеленый
     def get_status_color(val):
-        if val > 0.6: return "#009753"  # Зеленый
-        if val > 0.3: return "#FFC107"  # Желтый
-        return "#FF5252"               # Красный
+        if val >= 0.5: return "#009753"  # Зеленый (теперь совпадает с визуалом шкал)
+        if val > 0.2: return "#FFC107"   # Желтый
+        return "#FF5252"                # Красный
 
     # 2. ШАПКА ЭКРАНА
     header = ft.Container(
@@ -65,23 +64,21 @@ def MyPlantsView(page: ft.Page, nav, user_state):
         img_path = f"assets/{plant_obj.image_url}" if plant_obj.image_url else "https://images.unsplash.com/photo-1453904300235-0f2f60b15b5d?q=80&w=300"
         
         cat = plant_obj.catalog_info
-        water_val = 0.0 # По умолчанию — пить хочет
+        water_val = 0.0
 
         if plant_obj.last_watered_at and cat and cat.default_watering_interval:
-            # Считаем разницу максимально точно
             diff_seconds = (datetime.now() - plant_obj.last_watered_at).total_seconds()
             interval_seconds = cat.default_watering_interval * 24 * 3600
             
-            # Если полили в течение последних 60 секунд — считаем 100% влажности
             if diff_seconds < 60:
                 water_val = 1.0
             else:
                 water_val = max(0.0, min(1.0, 1.0 - (diff_seconds / interval_seconds)))
         elif plant_obj.last_watered_at:
-            # Если даты есть, но нет интервала в каталоге — просто считаем "нормой"
             water_val = 0.8
         
-        light_val = cat.default_light_level if cat else 0.5
+        # ИСПРАВЛЕНИЕ: Берем ручную настройку света, если она есть
+        light_val = plant_obj.user_light_level if plant_obj.user_light_level is not None else (cat.default_light_level if cat else 0.5)
         health_val = 1.0 if water_val > 0.2 else 0.4
 
         return ft.Container(
