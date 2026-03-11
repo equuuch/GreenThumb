@@ -12,13 +12,20 @@ def ScannerView(page: ft.Page, nav, user_state, _=None):
         page.overlay.append(local_picker)
     
     ui_state = {"image_bytes": None, "catalog_data": None}
-    # Контрол для редактирования названия
+    
+    # Поля ввода для редактирования данных
     name_edit_field = ft.TextField(
-        label="Название растения",
+        label="Название вида",
         border_color="#009753",
-        focused_border_color="#009753",
-        text_size=18,
-        text_align=ft.TextAlign.CENTER
+        text_size=16
+    )
+    # НОВОЕ: Поле для ввода начальной высоты
+    height_field = ft.TextField(
+        label="Начальная высота (см)",
+        value="10", # Значение по умолчанию
+        keyboard_type=ft.KeyboardType.NUMBER,
+        border_color="#009753",
+        width=150
     )
 
     def on_file_picked(e: ft.FilePickerResultEvent):
@@ -60,69 +67,73 @@ def ScannerView(page: ft.Page, nav, user_state, _=None):
 
     main_image = ft.Image(
         src="https://images.unsplash.com/photo-1491147334573-44cbb4602074?q=80&w=1000", 
-        fit=ft.ImageFit.COVER,
-        opacity=0.4
+        fit=ft.ImageFit.COVER, opacity=0.4
     )
-    
     loading_ring = ft.ProgressRing(visible=False, color="#009753", width=50, height=50)
 
     instruction_container = ft.Container(
-        padding=40,
         content=ft.Column(
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             controls=[
-                ft.Icon(ft.Icons.FILTER_CENTER_FOCUS, size=80, color="white"),
-                ft.Text("Умный сканер", size=28, weight="bold", color="white"),
-                ft.Text(
-                    "Сделайте фото камерой или выберите\nиз галереи. Имя можно будет изменить.", 
-                    size=16, color="white70", text_align=ft.TextAlign.CENTER
-                ),
+                ft.Icon(ft.Icons.FILTER_CENTER_FOCUS, size=60, color="white"),
+                ft.Text("Умный сканер", size=24, weight="bold", color="white"),
+                ft.Text("Сделайте фото или выберите файл", color="white70"),
             ]
         ),
         alignment=ft.alignment.center
     )
     
     sheet_container = ft.Container(
-        bgcolor="white", padding=30, 
+        bgcolor="white", padding=20, 
         border_radius=ft.border_radius.only(top_left=30, top_right=30),
         offset=ft.Offset(0, 1),
         animate_offset=ft.animation.Animation(600, ft.AnimationCurve.DECELERATE),
-        shadow=ft.BoxShadow(blur_radius=20, color="black26")
     )
-    sheet_col = ft.Column(horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=15)
+    sheet_col = ft.Column(horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10)
     sheet_container.content = sheet_col
 
     def populate_sheet(data):
-        # Подставляем имя из ИИ в поле для редактирования
         name_edit_field.value = data.get('species_name', '')
-        
         sheet_col.controls = [
             ft.Container(width=40, height=4, bgcolor="grey300", border_radius=2),
-            ft.Text("Результат сканирования", size=14, color="grey600"),
-            name_edit_field, # Поле ввода вместо обычного текста
-            ft.Text(f"Точность определения: {data.get('confidence', 90)}%", color="#009753", size=12),
-            ft.Divider(height=10, color="transparent"),
+            ft.Text("Настройка растения", size=18, weight="bold"),
+            name_edit_field,
+            ft.Row([ft.Text("Высота:"), height_field], alignment="center"),
             ft.ElevatedButton(
-                "Подтвердить и добавить", 
-                bgcolor="#009753", color="white", 
-                height=55, width=280,
-                on_click=lambda _: save_plant()
+                "Добавить в коллекцию и замерить", 
+                bgcolor="#009753", color="white", height=50, width=280,
+                on_click=lambda _: save_plant_with_log()
             )
         ]
         sheet_container.offset = ft.Offset(0, 0)
         page.update()
 
-    def save_plant():
+    def save_plant_with_log():
         if not ui_state["catalog_data"]: return
-        # ОБЯЗАТЕЛЬНО: Берем имя из текстового поля, а не из данных ИИ
-        ui_state["catalog_data"]['species_name'] = name_edit_field.value
         
+        # 1. Берем исправленное имя
+        ui_state["catalog_data"]['species_name'] = name_edit_field.value
+        h_val = float(height_field.value) if height_field.value else 0.0
+        u_id = user_state.get("id") or 1
+
         with next(get_db()) as db:
-            PlantService.confirm_and_create_plant(
-                db, user_state.get("id") or 1, ui_state["catalog_data"], 
-                image_bytes=ui_state["image_bytes"]
+            # 2. Вызываем основную функцию создания (Бэкенд)
+            plant, err = PlantService.confirm_and_create_plant(
+                db, u_id, ui_state["catalog_data"], image_bytes=ui_state["image_bytes"]
             )
-            nav("/my_plants")
+            
+            if plant:
+                # 3. СРАЗУ вызываем вторую функцию бэкенда для лога роста
+                PlantService.add_measurement(
+                    db, 
+                    plant_id=plant.plant_id, 
+                    height=h_val, 
+                    note="Первичный замер при сканировании",
+                    image_bytes=ui_state["image_bytes"] # Используем то же фото
+                )
+                nav("/my_plants")
+            else:
+                print(f"Ошибка сохранения: {err}")
 
     return ft.View(
         route="/scanner",
@@ -136,9 +147,9 @@ def ScannerView(page: ft.Page, nav, user_state, _=None):
                     ft.Container(content=loading_ring, alignment=ft.alignment.center),
                     ft.Container(
                         content=ft.ElevatedButton(
-                            content=ft.Row([ft.Icon(ft.Icons.ADD_A_PHOTO), ft.Text(" Сделать фото / Выбрать файл ")], alignment="center"),
-                            bgcolor="#009753", color="white", height=60, width=320,
-                            on_click=lambda _: local_picker.pick_files()
+                            "Выбрать фото / Камера", 
+                            on_click=lambda _: local_picker.pick_files(),
+                            bgcolor="#009753", color="white"
                         ),
                         bottom=40, left=0, right=0, alignment=ft.alignment.center
                     ),
