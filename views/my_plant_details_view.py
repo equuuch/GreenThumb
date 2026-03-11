@@ -24,23 +24,29 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
             ])
 
         cat_info = plant.catalog_info
-        
-        # Расчет начальных значений шкал
         light_val = cat_info.default_light_level if cat_info else 0.5
         
         if plant.last_watered_at and cat_info and cat_info.default_watering_interval:
             days_since = (datetime.now() - plant.last_watered_at).days
-            # Инвертируем: 1.0 - полная влага, 0.0 - сухая почва
             water_val = max(0.0, min(1.0, 1.0 - (days_since / cat_info.default_watering_interval)))
         else:
             water_val = 0.5
 
-        # Здоровье привязано к влаге (упрощенно)
         health_val = 1.0 if water_val > 0.2 else 0.4
+
+    # --- РЕАКТИВНЫЕ ЭЛЕМЕНТЫ ШКАЛЫ ---
+    # Создаем их здесь, чтобы handle_watering мог до них дотянуться
+    water_bar_fill = ft.Container(
+        bgcolor="#009753" if water_val > 0.6 else "#FFC107" if water_val > 0.3 else "#FF5252",
+        height=10,
+        expand=max(1, int(water_val * 10)),
+        border_radius=5,
+        animate=ft.animation.Animation(800, ft.AnimationCurve.DECELERATE) # Плавный запуск
+    )
+    water_bar_empty = ft.Container(expand=10 - water_bar_fill.expand)
 
     def handle_watering(e):
         with next(get_db()) as db:
-            # 1. Поиск и выполнение задачи
             task = db.query(CareCalendar).filter(
                 CareCalendar.plant_id == plant_id,
                 CareCalendar.task_type == "watering",
@@ -55,29 +61,30 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
                     plant_obj.last_watered_at = datetime.now()
                     db.commit()
 
-            # 2. Новое уведомление (без Warning)
-            snack = ft.SnackBar(
-                ft.Text("Растение полито! Обновляю шкалы..."),
-                bgcolor="#009753"
-            )
-            page.overlay.append(snack)
-            snack.open = True
-            
-            # 3. ЖЕСТКАЯ ПЕРЕЗАГРУЗКА
-            # Мы просто вызываем обновление маршрута. 
-            # Чтобы Flet точно "проснулся", можно сначала сбросить роут
-            current_route = view.route
-            page.go("/temp") # Костыль для принудительного обновления
-            page.go(current_route)
-            page.update()
+        # МЕНЯЕМ ШКАЛУ БЕЗ ПЕРЕЗАГРУЗКИ (page.go)
+        water_bar_fill.expand = 10
+        water_bar_fill.bgcolor = "#009753"
+        water_bar_empty.expand = 0
+        
+        snack = ft.SnackBar(
+            ft.Text("Растение полито! Шкалы обновлены."),
+            bgcolor="#009753"
+        )
+        page.overlay.append(snack)
+        snack.open = True
+        page.update()
 
     # --- КОНСТРУКТОР ШКАЛ ---
-    def create_stat(label, icon, val):
-        # Цвет меняется динамически
+    def create_stat(label, icon, val, custom_fill=None, custom_empty=None):
         color = "#009753" if val > 0.6 else "#FFC107" if val > 0.3 else "#FF5252"
-        # Переводим 0.0-1.0 в масштаб 1-10 для expand
         safe_val = max(1, int(val * 10))
         
+        # Используем либо кастомный (реактивный) филл, либо обычный статический
+        fill = custom_fill if custom_fill else ft.Container(
+            bgcolor=color, height=10, expand=safe_val, border_radius=5
+        )
+        empty = custom_empty if custom_empty else ft.Container(expand=10 - safe_val)
+
         return ft.Column([
             ft.Row([
                 ft.Icon(icon, size=18, color=color), 
@@ -87,16 +94,7 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
                 bgcolor="#EBEBEB", 
                 height=10, 
                 border_radius=5,
-                content=ft.Row([
-                    ft.Container(
-                        bgcolor=color, 
-                        height=10, 
-                        expand=safe_val, 
-                        border_radius=5,
-                        animate=ft.animation.Animation(700, ft.AnimationCurve.DECELERATE)
-                    ),
-                    ft.Container(expand=10 - safe_val) 
-                ], spacing=0)
+                content=ft.Row([fill, empty], spacing=0)
             ),
             ft.Container(height=12)
         ])
@@ -104,12 +102,12 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
     # --- ПОСТРОЕНИЕ ИНТЕРФЕЙСА ---
     img_path = f"uploads/{plant.image_url}" if plant.image_url else "https://images.unsplash.com/photo-1453904300235-0f2f60b15b5d?q=80&w=300"
 
-    # Шапка с фото и кнопками
+    # Шапка с фото (твой Stack)
     header = ft.Stack([
         ft.Image(
             src=img_path,
             fit=ft.ImageFit.COVER,
-            width=page.window.width,
+            width=400, # Используем фиксированную ширину для стабильности
             height=450
         ),
         ft.Container(
@@ -127,7 +125,7 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
         )
     ])
 
-    # Контентная часть (белая плашка)
+    # Контентная часть (твоя белая плашка)
     content = ft.Container(
         bgcolor="#F4F4F4",
         padding=ft.padding.all(30),
@@ -135,7 +133,6 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
         margin=ft.margin.only(top=-40),
         expand=True,
         content=ft.Column([
-            # Заголовок и индикатор жизни
             ft.Row([
                 ft.Text(plant.custom_name, size=28, weight="bold", color="black"),
                 ft.Container(
@@ -152,8 +149,8 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
             
             ft.Container(height=25),
             
-            # Отрисовка шкал
-            create_stat("Уровень влаги", ft.Icons.WATER_DROP_OUTLINED, water_val),
+            # ОТРИСОВКА ШКАЛ (Уровень влаги теперь реактивный)
+            create_stat("Уровень влаги", ft.Icons.WATER_DROP_OUTLINED, water_val, water_bar_fill, water_bar_empty),
             create_stat("Требуемый свет", ft.Icons.WB_SUNNY_OUTLINED, light_val),
             create_stat("Здоровье", ft.Icons.FAVORITE_BORDER, health_val),
             
@@ -172,7 +169,7 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
         ], scroll=ft.ScrollMode.ADAPTIVE)
     )
 
-    # Сборка финального вида
+    # Финальный ListView
     view.controls.append(
         ft.ListView([
             header,
