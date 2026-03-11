@@ -20,7 +20,7 @@ class TokenUsage(Base):
     token_usage_id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
     tokens_count = Column(Integer)
-    request_type = Column(String) # тип запроса для аналитики расходов
+    request_type = Column(String) 
     created_at = Column(DateTime, server_default=func.now())
 
     user = relationship("User", back_populates="token_usages")
@@ -49,7 +49,10 @@ class Plant(Base):
     __tablename__ = "plants"
     plant_id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
-    catalog_id = Column(Integer, ForeignKey("plant_catalog.catalog_id"), nullable=False)
+    
+    # ИСПРАВЛЕНО: Теперь можно добавлять растения без ID из каталога (nullable=True)
+    catalog_id = Column(Integer, ForeignKey("plant_catalog.catalog_id"), nullable=True)
+    
     custom_name = Column(String)
     image_url = Column(String)
     status_text = Column(String, default='healthy')
@@ -79,8 +82,8 @@ class GrowthLog(Base):
     log_id = Column(Integer, primary_key=True, autoincrement=True)
     plant_id = Column(Integer, ForeignKey("plants.plant_id", ondelete="CASCADE"), nullable=False)
     height = Column(Numeric, nullable=False)
-    note = Column(Text) # заметка пользователя о состоянии растения
-    image_path = Column(String) # относительный путь к фото прогресса
+    note = Column(Text) 
+    image_path = Column(String) 
     measured_at = Column(Date, server_default=func.current_date())
 
     plant = relationship("Plant", back_populates="growth_logs")
@@ -92,7 +95,7 @@ class AIConsultation(Base):
     plant_id = Column(Integer, ForeignKey("plants.plant_id", ondelete="CASCADE"), nullable=True)
     prompt_text = Column(Text, nullable=False)
     response_text = Column(Text, nullable=False)
-    consultation_type = Column(String) # тип запроса для статистики
+    consultation_type = Column(String) 
     created_at = Column(DateTime, server_default=func.now())
 
     user = relationship("User", back_populates="consultations")
