@@ -2,7 +2,7 @@ import flet as ft
 from database.session import init_db
 from urllib.parse import unquote
 
-# Импорты ваших вьюх
+# Импорты вьюх
 from views.home_view import HomeView
 from views.user_home_view import UserHomeView
 from views.my_plants_view import MyPlantsView
@@ -15,7 +15,7 @@ from views.my_plant_details_view import MyPlantDetailsView
 from views.details_view import DetailsView
 from views.search_view import SearchView
 
-# Импорт новой вьюхи добавления растения
+# Импорт вьюхи добавления растения
 try:
     from views.add_plant_view import AddPlantView
 except ImportError:
@@ -40,6 +40,15 @@ def main(page: ft.Page):
     page.bgcolor = "white"
     page.padding = 0
     
+    page.theme = ft.Theme(
+        page_transitions=ft.PageTransitionsTheme(
+            android="fadeThrough",
+            ios="cupertino",
+            windows="fadeThrough",
+            macos="zoom",
+        )
+    )
+
     # Мобильные размеры окна
     page.window.width = 400
     page.window.height = 800
@@ -50,7 +59,6 @@ def main(page: ft.Page):
 
     # --- ФУНКЦИЯ НАВИГАЦИИ ---
     def navigate(route_str):
-        # Используем go, но без ручного вызова handle_route_change
         page.go(route_str)
 
     # --- ГЛАВНЫЙ ОБРАБОТЧИК МАРШРУТОВ ---
@@ -66,7 +74,6 @@ def main(page: ft.Page):
             if page.route.startswith("/reference/"):
                 try:
                     catalog_id = int(page.route.split("/")[-1])
-                    # ВАЖНО: передаем USER_STATE, так как ReferenceView его требует
                     v = ReferenceView(page, navigate, catalog_id, USER_STATE)
                 except Exception as ex_ref: 
                     print(f"ОШИБКА В РОУТЕ REFERENCE: {ex_ref}")
@@ -76,11 +83,11 @@ def main(page: ft.Page):
                 try:
                     query = unquote(page.route.split("q=")[-1])
                     v = SearchView(page, navigate, query, USER_STATE)
-                except: v = HomeView(page, navigate)
+                except: 
+                    v = HomeView(page, navigate)
 
             elif page.route.startswith("/auth"):
                 is_register = "?mode=register" in page.route
-                # Исправлена опечатка в присваивании
                 v = AuthView(page, navigate, USER_STATE, is_register_mode=is_register)
             
             elif page.route.startswith("/my_plant_details/"):
@@ -125,10 +132,10 @@ def main(page: ft.Page):
             is_auth = page.route.startswith("/auth")
 
             if page.route not in hide_nav_on and not is_reference and not is_plant and not is_auth and NavBar:
-                def on_click(idx):
+                def on_nav_click(idx):
                     routes = ["/user_home", "/my_plants", "/scanner", "/profile"]
                     navigate(routes[idx])
-                v.bottom_appbar = NavBar(current_index, on_click)
+                v.bottom_appbar = NavBar(current_index, on_nav_click)
             
             page.views.append(v)
 
