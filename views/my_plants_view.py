@@ -14,7 +14,6 @@ def MyPlantsView(page: ft.Page, nav, user_state):
     user_id = user_state.get("id") or 1
 
     # 1. ЗАГРУЗКА ДАННЫХ С ЖАДНОЙ ЗАГРУЗКОЙ (Eager Loading)
-    # Используем joinedload, чтобы catalog_info был доступен после закрытия сессии
     with next(get_db()) as db:
         my_plants = (
             db.query(Plant)
@@ -59,7 +58,13 @@ def MyPlantsView(page: ft.Page, nav, user_state):
 
     # 3. ФУНКЦИЯ КАРТОЧКИ
     def create_plant_card(plant_obj):
-        img_path = f"uploads/{plant_obj.image_url}" if plant_obj.image_url else "https://images.unsplash.com/photo-1453904300235-0f2f60b15b5d?q=80&w=300"
+        # ИСПРАВЛЕНИЕ ПУТИ:
+        # В AddPlantView мы сохраняем как "/plants/filename.jpg"
+        # Flet ищет в папке assets. Убираем ведущий слэш, чтобы получилось "plants/filename.jpg"
+        if plant_obj.image_url:
+            img_path = plant_obj.image_url.lstrip("/") 
+        else:
+            img_path = "https://images.unsplash.com/photo-1453904300235-0f2f60b15b5d?q=80&w=300"
         
         # Теперь catalog_info доступен благодаря joinedload
         cat = plant_obj.catalog_info

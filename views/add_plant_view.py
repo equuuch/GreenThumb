@@ -1,15 +1,20 @@
 import flet as ft
 import base64
 import threading
+import os
+import uuid
 from database.session import get_db
 from database.models import Plant
 from services.ai_services import GigaChatService
 from datetime import datetime
 
 def AddPlantView(page: ft.Page, nav, user_state):
+    """
+    Версия 2.6: Полная версия. Исправлено сохранение фото и восстановлен ИИ-парсинг.
+    """
     img_bytes = page.session.get("pending_image")
-    # Читаем флаг: нужно ли запускать ИИ
     use_ai = page.session.get("use_ai_recognition")
+    selected_light = page.session.get("pending_light") or 0.5
     
     # Поля ввода
     name_field = ft.TextField(
@@ -22,7 +27,7 @@ def AddPlantView(page: ft.Page, nav, user_state):
     )
     
     height_field = ft.TextField(
-        label="Рост растения (см) *", # Добавлена пометка обязательности
+        label="Рост растения (см) *", 
         hint_text="Например: 15",
         keyboard_type=ft.KeyboardType.NUMBER,
         border_radius=15,
@@ -47,7 +52,7 @@ def AddPlantView(page: ft.Page, nav, user_state):
             # Пытаемся получить ответ
             res_data = ai.diagnose_plant(next(get_db()), user_state.get("id", 1), img_bytes)
             
-            # Тщательная проверка ответа
+            # Тщательная проверка ответа (восстановлено)
             if res_data is not None:
                 full_text = res_data[0] if isinstance(res_data, tuple) else res_data
                 
@@ -65,7 +70,7 @@ def AddPlantView(page: ft.Page, nav, user_state):
                 else:
                     ai_status.value = "ИИ не смог распознать название."
             else:
-                ai_status.value = "Сервер ИИ занят (429). Попробуйте позже."
+                ai_status.value = "Сервер ИИ занят. Попробуйте позже."
                 ai_status.color = "orange"
                 
         except Exception as e:
@@ -83,14 +88,13 @@ def AddPlantView(page: ft.Page, nav, user_state):
         on_click=lambda _: threading.Thread(target=auto_detect_name, daemon=True).start()
     )
 
-    # ИСПРАВЛЕНО: Запуск ИИ только если флаг use_ai == True
-    if use_ai:
+    # Запуск ИИ ТОЛЬКО если пользователь выбрал авто-определение
+    if use_ai is True:
         threading.Thread(target=auto_detect_name, daemon=True).start()
     else:
-        ai_status.value = "Ручной ввод данных"
+        ai_status.value = "Выбран ручной ввод данных"
 
     def save_to_db(e):
-        # Валидация
         if not name_field.value:
             page.snack_bar = ft.SnackBar(ft.Text("Введите название!"), bgcolor="orange")
             page.snack_bar.open = True
@@ -107,29 +111,48 @@ def AddPlantView(page: ft.Page, nav, user_state):
         save_btn.content = ft.ProgressRing(width=20, height=20, color="white")
         page.update()
 
+        # --- ЛОГИКА СОХРАНЕНИЯ ФАЙЛА ---
+        db_path = ""
+        if img_bytes:
+            try:
+                if not os.path.exists("assets/plants"):
+                    os.makedirs("assets/plants")
+                
+                filename = f"{uuid.uuid4().hex}.jpg"
+                file_path = os.path.join("assets/plants", filename)
+                
+                with open(file_path, "wb") as f:
+                    f.write(img_bytes)
+                
+                db_path = f"/plants/{filename}"
+            except Exception as file_ex:
+                print(f"Ошибка сохранения файла: {file_ex}")
+
         try:
             with next(get_db()) as db:
                 new_plant = Plant(
-                    user_id=user_state.get("id", 2),
+                    user_id=user_state.get("id", 1),
                     custom_name=name_field.value,
-                    # Сохраняем и рост, и уровень света (если он есть в модели)
+                    image_url=db_path, # Сохраняем путь к локальному файлу
                     status_text=f"Рост: {height_field.value} см", 
+                    user_light_level=selected_light,
                     is_active=1,
                     added_at=datetime.now()
                 )
                 db.add(new_plant)
                 db.commit()
                 
-            page.session.remove("pending_image")
-            page.session.remove("pending_light")
-            page.session.remove("use_ai_recognition")
-            
+            # Очистка сессии
+            for key in ["pending_image", "pending_light", "use_ai_recognition"]:
+                page.session.remove(key)
+
             page.snack_bar = ft.SnackBar(ft.Text("Сохранено в сад!"), bgcolor="#009753")
             page.snack_bar.open = True
-            nav("/my_plants")
+            nav("/user_home")
             
         except Exception as ex:
-            page.snack_bar = ft.SnackBar(ft.Text("Ошибка сохранения"), bgcolor="red")
+            print(f"Save error: {ex}")
+            page.snack_bar = ft.SnackBar(ft.Text("Ошибка сохранения в базу"), bgcolor="red")
             page.snack_bar.open = True
             save_btn.disabled = False
             save_btn.content = ft.Text("Сохранить в сад", size=16, weight="bold")
@@ -146,7 +169,7 @@ def AddPlantView(page: ft.Page, nav, user_state):
         bgcolor="white",
         controls=[
             ft.AppBar(
-                title=ft.Text("Новое растение", color="black"), # ИСПРАВЛЕНО
+                title=ft.Text("Новое растение", color="black"),
                 bgcolor="transparent",
                 leading=ft.IconButton(ft.Icons.ARROW_BACK, on_click=lambda _: nav("/scanner"))
             ),
@@ -160,8 +183,10 @@ def AddPlantView(page: ft.Page, nav, user_state):
                         alignment=ft.alignment.center,
                     ),
                     
-                    ft.Row([ai_status, retry_btn if use_ai else ft.Container()], 
-                           alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    ft.Row([
+                        ai_status, 
+                        ft.Text(f"Свет: {int(selected_light*100)}%", size=12, weight="bold")
+                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                     ai_loader,
                     
                     ft.Text("Детали", size=18, weight="bold"),
@@ -169,7 +194,8 @@ def AddPlantView(page: ft.Page, nav, user_state):
                     height_field,
                     
                     ft.Container(height=10),
-                    save_btn
+                    save_btn,
+                    retry_btn # Добавил кнопку повтора, чтобы была возможность переспросить ИИ
                 ], 
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                 scroll=ft.ScrollMode.ADAPTIVE,

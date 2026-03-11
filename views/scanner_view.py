@@ -11,7 +11,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 def ScannerView(page: ft.Page, nav, user_state, _=None):
     """
-    Версия 2.0: Исправлен шаг слайдера (0.1), текст и логика передачи флага ИИ.
+    Версия 2.5: Полная версия со всеми функциями чата и логикой сохранения в сессию.
     """
     
     # --- СЛУЖЕБНЫЕ ОБЪЕКТЫ ---
@@ -25,10 +25,10 @@ def ScannerView(page: ft.Page, nav, user_state, _=None):
     ui_state = {
         "image_bytes": None,          # Фото для обработки
         "chat_image_pending": None,   # Фото, прикрепленное внутри чата
-        "current_plant_info": "Новое растение", # ИСПРАВЛЕНО
+        "current_plant_info": "Новое растение",
         "chat_messages": [],
         "is_sending": False,
-        "selected_light": 0.5         # Значение света по умолчанию
+        "selected_light_raw": 50      # Значение от 0 до 100
     }
 
     # --- ЭЛЕМЕНТЫ ИНТЕРФЕЙСА ---
@@ -41,15 +41,14 @@ def ScannerView(page: ft.Page, nav, user_state, _=None):
         bgcolor="#F8F9FA", content_padding=15, on_submit=lambda _: send_chat_message()
     )
 
-    # ИСПРАВЛЕНО: Добавлен step=0.1 для дробных значений
     light_slider = ft.Slider(
-        min=0.0, 
-        max=1.0, 
-        divisions=10, # Это создаст 10 отрезков по 0.1
-        value=0.5, 
-        label="{value}",
+        min=0, 
+        max=100, 
+        divisions=10, 
+        value=50, 
+        label="{value}%",
         active_color="#FFC107",
-        on_change=lambda e: ui_state.update({"selected_light": float(e.control.value)})
+        on_change=lambda e: ui_state.update({"selected_light_raw": int(e.control.value)})
     )
 
     # --- ЛОГИКА ВЫБОРА (ДИАЛОГ) ---
@@ -78,9 +77,10 @@ def ScannerView(page: ft.Page, nav, user_state, _=None):
     def start_adding(e, use_ai=True):
         """Режим: Добавить в коллекцию"""
         choice_dialog.open = False
+        # Передаем байты в сессию для AddPlantView
         page.session.set("pending_image", ui_state["image_bytes"])
-        page.session.set("pending_light", float(ui_state["selected_light"]))
-        page.session.set("use_ai_recognition", use_ai) # ПЕРЕДАЕМ ФЛАГ ИИ
+        page.session.set("pending_light", ui_state["selected_light_raw"] / 100)
+        page.session.set("use_ai_recognition", use_ai)
         nav("/add_plant") 
 
     # Диалог с настройками
