@@ -1,6 +1,9 @@
 import flet as ft
 from database.session import get_db
+from database.models import Plant
 from services.plant_services import PlantService
+from sqlalchemy.orm import joinedload
+from datetime import datetime
 
 def MyPlantsView(page: ft.Page, nav, user_state):
     view = ft.View()
@@ -10,9 +13,21 @@ def MyPlantsView(page: ft.Page, nav, user_state):
 
     user_id = user_state.get("id") or 1
 
-    # 1. ЗАГРУЗКА ДАННЫХ
+    # 1. ЗАГРУЗКА ДАННЫХ С ЖАДНОЙ ЗАГРУЗКОЙ (Eager Loading)
+    # Используем joinedload, чтобы catalog_info был доступен после закрытия сессии
     with next(get_db()) as db:
-        my_plants = PlantService.get_user_plants(db, user_id)
+        my_plants = (
+            db.query(Plant)
+            .options(joinedload(Plant.catalog_info))
+            .filter(Plant.user_id == user_id, Plant.is_active == 1)
+            .all()
+        )
+
+    # Вспомогательная функция для выбора цвета индикаторов
+    def get_status_color(val):
+        if val > 0.6: return "#009753"  # Зеленый
+        if val > 0.3: return "#FFC107"  # Желтый
+        return "#FF5252"               # Красный
 
     # 2. ШАПКА ЭКРАНА
     header = ft.Container(
@@ -42,12 +57,25 @@ def MyPlantsView(page: ft.Page, nav, user_state):
         ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
     )
 
-    # 3. ФУНКЦИЯ КАРТОЧКИ (С полными параметрами)
+    # 3. ФУНКЦИЯ КАРТОЧКИ
     def create_plant_card(plant_obj):
         img_path = f"uploads/{plant_obj.image_url}" if plant_obj.image_url else "https://images.unsplash.com/photo-1453904300235-0f2f60b15b5d?q=80&w=300"
         
-        # Цвет капли: зеленый если все ок, красный если засуха
-        water_color = "#009753" if plant_obj.status_text == "healthy" else "#D32F2F"
+        # Теперь catalog_info доступен благодаря joinedload
+        cat = plant_obj.catalog_info
+
+        # РАСЧЕТ ПАРАМЕТРОВ
+        # Влага
+        water_val = 0.5
+        if plant_obj.last_watered_at and cat and cat.default_watering_interval:
+            days_since = (datetime.now() - plant_obj.last_watered_at).days
+            water_val = max(0.0, min(1.0, 1.0 - (days_since / cat.default_watering_interval)))
+        
+        # Свет
+        light_val = cat.default_light_level if cat else 0.5
+        
+        # Здоровье (базируется на влаге)
+        health_val = 1.0 if water_val > 0.2 else 0.4
 
         return ft.Container(
             bgcolor="white", 
@@ -57,12 +85,12 @@ def MyPlantsView(page: ft.Page, nav, user_state):
                 color=ft.Colors.with_opacity(0.1, "black"),
                 offset=ft.Offset(0, 5)
             ),
-            col={"xs": 6, "sm": 6, "md": 3, "lg": 2}, # Тянется от 2 до 6 в ряд
+            col={"xs": 6, "sm": 6, "md": 3, "lg": 2}, 
             on_click=lambda _: nav(f"/my_plant_details/{plant_obj.plant_id}"),
             content=ft.Column(
                 spacing=0,
                 controls=[
-                    # КАРТИНКА (Квадратная через aspect_ratio)
+                    # КАРТИНКА (AspectRatio 1:1)
                     ft.Container(
                         aspect_ratio=1.0,
                         content=ft.Image(
@@ -86,10 +114,11 @@ def MyPlantsView(page: ft.Page, nav, user_state):
                                     overflow=ft.TextOverflow.ELLIPSIS,
                                     font_family="Montserrat"
                                 ),
+                                # Ряд динамических иконок
                                 ft.Row([
-                                    ft.Icon(ft.Icons.WATER_DROP_OUTLINED, size=18, color=water_color),
-                                    ft.Icon(ft.Icons.WB_SUNNY_OUTLINED, size=18, color="#6E6E6E"),
-                                    ft.Icon(ft.Icons.FAVORITE_BORDER, size=18, color="#D32F2F"),
+                                    ft.Icon(ft.Icons.WATER_DROP, size=18, color=get_status_color(water_val)),
+                                    ft.Icon(ft.Icons.WB_SUNNY, size=18, color=get_status_color(light_val)),
+                                    ft.Icon(ft.Icons.FAVORITE, size=18, color=get_status_color(health_val)),
                                 ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
                             ]
                         )
@@ -98,7 +127,7 @@ def MyPlantsView(page: ft.Page, nav, user_state):
             )
         )
 
-    # 4. СЕТКА
+    # 4. СЕТКА (Grid)
     grid = ft.ResponsiveRow(spacing=15, run_spacing=15)
     
     if not my_plants:
@@ -122,7 +151,7 @@ def MyPlantsView(page: ft.Page, nav, user_state):
         for p in my_plants:
             grid.controls.append(create_plant_card(p))
 
-    # СБОРКА
+    # СБОРКА ФИНАЛЬНОГО ВИДА
     view.controls.append(
         ft.ListView(
             controls=[
@@ -132,4 +161,5 @@ def MyPlantsView(page: ft.Page, nav, user_state):
             expand=True
         )
     )
+    
     return view

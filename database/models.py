@@ -49,14 +49,16 @@ class Plant(Base):
     __tablename__ = "plants"
     plant_id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
-    
-    # ИСПРАВЛЕНО: Теперь можно добавлять растения без ID из каталога (nullable=True)
     catalog_id = Column(Integer, ForeignKey("plant_catalog.catalog_id"), nullable=True)
     
     custom_name = Column(String)
     image_url = Column(String)
     status_text = Column(String, default='healthy')
     last_watered_at = Column(DateTime)
+    
+    # НОВАЯ КОЛОНКА: Настройка света пользователем
+    user_light_level = Column(Float, nullable=True)
+    
     added_at = Column(DateTime, server_default=func.now()) 
     is_active = Column(Boolean, default=True)
 

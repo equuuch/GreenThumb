@@ -1,15 +1,15 @@
 import sys
 import os
-import datetime
 from datetime import datetime, timedelta 
 from sqlalchemy.orm import Session
 from database.session import init_db, SessionLocal
-from database.models import User, PlantCatalog, Plant, PlantAlias # ДОБАВЛЯЕМ PLANTALIAS
+from database.models import User, PlantCatalog, Plant, PlantAlias
 
 # Настройка пути
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 def seed_data():
+    # Удаляем старую базу или инициализируем новую
     init_db()
     db = SessionLocal()
 
@@ -24,31 +24,31 @@ def seed_data():
         db.refresh(user)
         print(f"✅ Пользователь создан: {user_email}")
 
-    # 2. Наполняем Каталог (Справочник)
+    # 2. Наполняем Каталог
     catalog_items_data = [
         {
             "species_name": "Алоэ Вера",
             "latin_name": "Aloe barbadensis miller",
-            "description": "Суккулент с целебными свойствами. Хранит запас влаги в толстых листьях.",
-            "default_watering_interval": 14, # СИНХРОНИЗИРУЕМ С МОДЕЛЬЮ
+            "description": "Суккулент с целебными свойствами.",
+            "default_watering_interval": 14,
             "default_light_level": 0.8,
-            "aliases": ["алоэ", "столетник", "алое", "доктор"]
+            "aliases": ["алоэ", "столетник", "алое"]
         },
         {
             "species_name": "Петрушка Кудрявая",
             "latin_name": "Petroselinum crispum",
-            "description": "Пряное растение. Требует влажной почвы.",
+            "description": "Пряное растение. Любит воду.",
             "default_watering_interval": 3,
             "default_light_level": 0.7,
-            "aliases": ["петрушка", "зелень для салата"]
+            "aliases": ["петрушка", "зелень"]
         },
         {
             "species_name": "Роза Комнатная",
             "latin_name": "Rosa chinensis",
-            "description": "Миниатюрная роза. Требует внимательного ухода.",
+            "description": "Миниатюрная роза.",
             "default_watering_interval": 5,
             "default_light_level": 0.9,
-            "aliases": ["роза", "красивый цветок"]
+            "aliases": ["роза"]
         },
         {
             "species_name": "Гибискус",
@@ -73,7 +73,6 @@ def seed_data():
             db.add(new_cat)
             db.flush()
             
-            # НОВЫЙ БЛОК: ДОБАВЛЕНИЕ АЛИАСОВ
             for alias_text in item_data.get("aliases", []):
                 new_alias = PlantAlias(
                     user_input=alias_text.lower(),
@@ -84,7 +83,7 @@ def seed_data():
     db.commit()
     print("✅ Каталог и Алиасы наполнены")
 
-    # 3. Добавляем растения пользователю (Адаптировано под новые поля)
+    # 3. Добавляем растения пользователю с РАЗНЫМИ уровнями света
     cats = {c.species_name: c.catalog_id for c in db.query(PlantCatalog).all()}
     
     if db.query(Plant).filter_by(user_id=user.user_id).count() == 0:
@@ -95,31 +94,35 @@ def seed_data():
                 custom_name="Алоэ на подоконнике",
                 image_url="/aloe.png",
                 last_watered_at=datetime.now() - timedelta(days=2),
+                user_light_level=0.9,  # Зеленое солнце
                 status_text="Отличное состояние. Подарок от дедушки.",
                 is_active=True
             ),
             Plant(
                 user_id=user.user_id,
                 catalog_id=cats.get("Петрушка Кудрявая"),
-                custom_name="Зелень для салата",
+                custom_name="Зелень в тени",
                 image_url="/petrushka.png",
                 last_watered_at=datetime.now(),
-                status_text="Стадия: Рассада. Посеяна в феврале.",
+                user_light_level=0.4,  # Желтое солнце
+                status_text="Стадия: Рассада.",
                 is_active=True
             ),
             Plant(
                 user_id=user.user_id,
                 catalog_id=cats.get("Роза Комнатная"),
-                custom_name="Красавица",
+                custom_name="Роза в шкафу",
                 image_url="/rose.png",
                 last_watered_at=datetime.now() - timedelta(days=1),
-                status_text="Требует внимания: опрыскивать листья.",
+                user_light_level=0.1,  # Красное солнце
+                status_text="Нужен свет!",
                 is_active=True
             )
+            
         ]
         db.add_all(my_plants)
         db.commit()
-        print(f"✅ В сад добавлено {len(my_plants)} растений")
+        print(f"✅ В сад добавлено {len(my_plants)} растений с тестовым освещением")
 
     db.close()
 

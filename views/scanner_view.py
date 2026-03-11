@@ -11,7 +11,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 def ScannerView(page: ft.Page, nav, user_state, _=None):
     """
-    Версия 1.6: Полное разделение логики 'Добавить растение' и 'Чат с ИИ'.
+    Версия 1.7: Добавлен выбор уровня освещения при добавлении растения.
     """
     
     # --- СЛУЖЕБНЫЕ ОБЪЕКТЫ ---
@@ -27,7 +27,8 @@ def ScannerView(page: ft.Page, nav, user_state, _=None):
         "chat_image_pending": None,   # Фото, прикрепленное внутри чата
         "current_plant_info": "Новое растение",
         "chat_messages": [],
-        "is_sending": False 
+        "is_sending": False,
+        "selected_light": 0.5         # Значение света по умолчанию
     }
 
     # --- ЭЛЕМЕНТЫ ИНТЕРФЕЙСА ---
@@ -38,6 +39,15 @@ def ScannerView(page: ft.Page, nav, user_state, _=None):
     chat_input = ft.TextField(
         hint_text="Спросите агронома...", expand=True, border_radius=15, 
         bgcolor="#F8F9FA", content_padding=15, on_submit=lambda _: send_chat_message()
+    )
+
+    # Ползунок для выбора уровня света
+    light_slider = ft.Slider(
+        min=0.0, max=1.0, divisions=10, 
+        value=0.5, 
+        label="{value}",
+        active_color="#FFC107",
+        on_change=lambda e: ui_state.update({"selected_light": e.control.value})
     )
 
     # --- ЛОГИКА ВЫБОРА (ДИАЛОГ) ---
@@ -68,16 +78,27 @@ def ScannerView(page: ft.Page, nav, user_state, _=None):
     def start_adding(e):
         """Режим: Добавить в коллекцию"""
         choice_dialog.open = False
-        # Сохраняем фото в сессию, чтобы экран /add_plant мог его забрать
+        # Сохраняем фото и свет в сессию, чтобы экран /add_plant мог их забрать
         page.session.set("pending_image", ui_state["image_bytes"])
+        page.session.set("pending_light", ui_state["selected_light"])
         nav("/add_plant") 
 
     choice_dialog = ft.AlertDialog(
-        title=ft.Text("Фото получено"),
-        content=ft.Text("Что вы хотите сделать с этим изображением?"),
+        title=ft.Text("Настройка растения"),
+        content=ft.Column([
+            ft.Text("Что вы хотите сделать с этим изображением?"),
+            ft.Divider(height=20),
+            ft.Text("Уровень освещения в месте установки:", size=14, weight="bold"),
+            ft.Row([
+                ft.Icon(ft.Icons.WB_CLOUDY_OUTLINED, size=20, color="grey600"),
+                ft.Container(content=light_slider, expand=True),
+                ft.Icon(ft.Icons.WB_SUNNY, size=20, color="#FFC107"),
+            ]),
+            ft.Text("Сдвиньте влево (тень) или вправо (прямой свет)", size=12, color="grey500"),
+        ], tight=True, spacing=10),
         actions=[
             ft.TextButton("Проконсультироваться", icon=ft.Icons.CHAT_BUBBLE_OUTLINE, on_click=start_diagnosis),
-            ft.ElevatedButton("Добавить в мой сад", icon=ft.Icons.ADD_ALARM, bgcolor="#009753", color="white", on_click=start_adding),
+            ft.ElevatedButton("Добавить в мой сад", icon=ft.Icons.ADD, bgcolor="#009753", color="white", on_click=start_adding),
         ],
         actions_alignment=ft.MainAxisAlignment.CENTER,
     )
@@ -92,13 +113,26 @@ def ScannerView(page: ft.Page, nav, user_state, _=None):
             
             # Показываем превью на фоне и открываем диалог выбора
             main_img_view.src_base64 = base64.b64encode(ui_state["image_bytes"]).decode("utf-8")
-            page.overlay.append(choice_dialog)
+            if choice_dialog not in page.overlay:
+                page.overlay.append(choice_dialog)
             choice_dialog.open = True
             page.update()
         except Exception as ex:
             print(f"File error: {ex}")
 
     main_picker.on_result = on_main_file_result
+
+    def on_chat_file_result(e: ft.FilePickerResultEvent):
+        if not e.files: return
+        try:
+            with open(e.files[0].path, "rb") as f:
+                ui_state["chat_image_pending"] = f.read()
+            page.snack_bar = ft.SnackBar(ft.Text("Фото прикреплено к сообщению")); page.snack_bar.open = True
+            page.update()
+        except Exception as ex:
+            print(f"Chat file error: {ex}")
+
+    chat_picker.on_result = on_chat_file_result
 
     # --- ФУНКЦИИ ЧАТА ---
 
