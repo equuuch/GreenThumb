@@ -1,75 +1,125 @@
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
-# Дальше твои старые импорты
-from database.session import init_db, SessionLocal
-# ... и так далее
-from database.session import init_db, SessionLocal
-from database.models import User, PlantCatalog, Plant
 import datetime
+from datetime import datetime, timedelta 
+from sqlalchemy.orm import Session
+from database.session import init_db, SessionLocal
+from database.models import User, PlantCatalog, Plant, PlantAlias # ДОБАВЛЯЕМ PLANTALIAS
+
+# Настройка пути
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 def seed_data():
     init_db()
     db = SessionLocal()
 
     # 1. Создаем пользователя
-    if not db.query(User).filter_by(email="test@mail.ru").first():
-        user = User(
-            email="test@mail.ru",
-            password_hash="123", # Простой пароль
-            first_name="Шахзод"
-        )
+    user_email = "test@mail.ru"
+    user = db.query(User).filter_by(email=user_email).first()
+    
+    if not user:
+        user = User(email=user_email, password_hash="123", first_name="Илья")
         db.add(user)
         db.commit()
-        print("✅ Пользователь создан (test@mail.ru / 123)")
-    
-    user = db.query(User).filter_by(email="test@mail.ru").first()
+        db.refresh(user)
+        print(f"✅ Пользователь создан: {user_email}")
 
-    # 2. Создаем Каталог (Справочник)
-    catalog_data = [
-        {"name": "Алоэ", "img": "/aloe.png", "water": 7},
-        {"name": "Петрушка", "img": "/petrushka.png", "water": 3},
-        {"name": "Роза", "img": "/rose.png", "water": 5},
-        {"name": "Гибискус", "img": "/hibiscus.png", "water": 4},
+    # 2. Наполняем Каталог (Справочник)
+    catalog_items_data = [
+        {
+            "species_name": "Алоэ Вера",
+            "latin_name": "Aloe barbadensis miller",
+            "description": "Суккулент с целебными свойствами. Хранит запас влаги в толстых листьях.",
+            "default_watering_interval": 14, # СИНХРОНИЗИРУЕМ С МОДЕЛЬЮ
+            "default_light_level": 0.8,
+            "aliases": ["алоэ", "столетник", "алое", "доктор"]
+        },
+        {
+            "species_name": "Петрушка Кудрявая",
+            "latin_name": "Petroselinum crispum",
+            "description": "Пряное растение. Требует влажной почвы.",
+            "default_watering_interval": 3,
+            "default_light_level": 0.7,
+            "aliases": ["петрушка", "зелень для салата"]
+        },
+        {
+            "species_name": "Роза Комнатная",
+            "latin_name": "Rosa chinensis",
+            "description": "Миниатюрная роза. Требует внимательного ухода.",
+            "default_watering_interval": 5,
+            "default_light_level": 0.9,
+            "aliases": ["роза", "красивый цветок"]
+        },
+        {
+            "species_name": "Гибискус",
+            "latin_name": "Hibiscus rosa-sinensis",
+            "description": "Китайская роза. Любит тепло и свет.",
+            "default_watering_interval": 4,
+            "default_light_level": 0.8,
+            "aliases": ["китайская роза", "гибискус"]
+        }
     ]
 
-    for item in catalog_data:
-        if not db.query(PlantCatalog).filter_by(species_name=item["name"]).first():
-            cat = PlantCatalog(
-                species_name=item["name"],
-                latin_name="Latin Name",
-                description="Test description",
-                default_watering_interval=item["water"],
-                default_light_level=0.5
+    for item_data in catalog_items_data:
+        exists = db.query(PlantCatalog).filter_by(species_name=item_data["species_name"]).first()
+        if not exists:
+            new_cat = PlantCatalog(
+                species_name=item_data["species_name"],
+                latin_name=item_data["latin_name"],
+                description=item_data["description"],
+                default_watering_interval=item_data["default_watering_interval"],
+                default_light_level=item_data["default_light_level"]
             )
-            db.add(cat)
+            db.add(new_cat)
+            db.flush()
+            
+            # НОВЫЙ БЛОК: ДОБАВЛЕНИЕ АЛИАСОВ
+            for alias_text in item_data.get("aliases", []):
+                new_alias = PlantAlias(
+                    user_input=alias_text.lower(),
+                    catalog_id=new_cat.catalog_id
+                )
+                db.add(new_alias)
+
     db.commit()
-    print("✅ Каталог наполнен")
+    print("✅ Каталог и Алиасы наполнены")
 
-    # 3. Добавляем растения пользователю
-    # Находим ID каталога
-    aloe_cat = db.query(PlantCatalog).filter_by(species_name="Алоэ").first()
-    petr_cat = db.query(PlantCatalog).filter_by(species_name="Петрушка").first()
-
-    if not db.query(Plant).filter_by(user_id=user.user_id).first():
-        p1 = Plant(
-            user_id=user.user_id,
-            catalog_id=aloe_cat.catalog_id,
-            custom_name="Алоэ",
-            image_url="/aloe.png", # Используем твои ассеты
-            last_watered_at=datetime.datetime.now()
-        )
-        p2 = Plant(
-            user_id=user.user_id,
-            catalog_id=petr_cat.catalog_id,
-            custom_name="Петрушка",
-            image_url="/petrushka.png",
-            last_watered_at=datetime.datetime.now()
-        )
-        db.add_all([p1, p2])
+    # 3. Добавляем растения пользователю (Адаптировано под новые поля)
+    cats = {c.species_name: c.catalog_id for c in db.query(PlantCatalog).all()}
+    
+    if db.query(Plant).filter_by(user_id=user.user_id).count() == 0:
+        my_plants = [
+            Plant(
+                user_id=user.user_id,
+                catalog_id=cats.get("Алоэ Вера"),
+                custom_name="Алоэ на подоконнике",
+                image_url="/aloe.png",
+                last_watered_at=datetime.now() - timedelta(days=2),
+                status_text="Отличное состояние. Подарок от дедушки.",
+                is_active=True
+            ),
+            Plant(
+                user_id=user.user_id,
+                catalog_id=cats.get("Петрушка Кудрявая"),
+                custom_name="Зелень для салата",
+                image_url="/petrushka.png",
+                last_watered_at=datetime.now(),
+                status_text="Стадия: Рассада. Посеяна в феврале.",
+                is_active=True
+            ),
+            Plant(
+                user_id=user.user_id,
+                catalog_id=cats.get("Роза Комнатная"),
+                custom_name="Красавица",
+                image_url="/rose.png",
+                last_watered_at=datetime.now() - timedelta(days=1),
+                status_text="Требует внимания: опрыскивать листья.",
+                is_active=True
+            )
+        ]
+        db.add_all(my_plants)
         db.commit()
-        print("✅ Растения добавлены в сад")
+        print(f"✅ В сад добавлено {len(my_plants)} растений")
 
     db.close()
 

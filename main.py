@@ -66,8 +66,11 @@ def main(page: ft.Page):
             if page.route.startswith("/reference/"):
                 try:
                     catalog_id = int(page.route.split("/")[-1])
+                    # ВАЖНО: передаем USER_STATE, так как ReferenceView его требует
                     v = ReferenceView(page, navigate, catalog_id, USER_STATE)
-                except: v = HomeView(page, navigate)
+                except Exception as ex_ref: 
+                    print(f"ОШИБКА В РОУТЕ REFERENCE: {ex_ref}")
+                    v = HomeView(page, navigate)
             
             elif page.route.startswith("/search"):
                 try:
@@ -77,7 +80,8 @@ def main(page: ft.Page):
 
             elif page.route.startswith("/auth"):
                 is_register = "?mode=register" in page.route
-                v = Auth_view = AuthView(page, navigate, USER_STATE, is_register_mode=is_register)
+                # Исправлена опечатка в присваивании
+                v = AuthView(page, navigate, USER_STATE, is_register_mode=is_register)
             
             elif page.route.startswith("/my_plant_details/"):
                 pid = int(page.route.split("/")[-1])
@@ -114,7 +118,7 @@ def main(page: ft.Page):
             else:
                 v = HomeView(page, navigate)
 
-            # --- ВОЗВРАТ СТАРОЙ ЛОГИКИ NAVBAR ---
+            # --- ЛОГИКА NAVBAR ---
             hide_nav_on = ["/", "/auth", "/my_plant_details", "/analytics", "/details", "/search", "/add_plant"]
             is_reference = page.route.startswith("/reference/")
             is_plant = page.route.startswith("/my_plant_details/")
