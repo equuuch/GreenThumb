@@ -2,7 +2,9 @@ import flet as ft
 import threading
 import base64
 import os
+import json
 from database.session import get_db
+from database.models import Plant
 from services.plant_services import PlantService
 from services.ai_services import GigaChatService
 
@@ -11,191 +13,195 @@ def ScannerView(page: ft.Page, nav, user_state, _=None):
     if local_picker not in page.overlay:
         page.overlay.append(local_picker)
     
-    ui_state = {"image_bytes": None, "catalog_data": None}
+    # Состояние интерфейса
+    ui_state = {
+        "image_bytes": None, 
+        "catalog_data": None, 
+        "mode": "identify",
+        "current_plant_info": "",
+        "chat_history": []
+    }
     
-    # Текст для вывода ошибок (чтобы видеть, почему прилетает null)
     error_text = ft.Text(color="red", weight="bold", visible=False, text_align="center")
-    
-    # Поля ввода для редактирования данных
-    name_edit_field = ft.TextField(
-        label="Название вида",
-        border_color="#009753",
-        text_size=16
-    )
-    
-    # Поле для ввода начальной высоты
-    height_field = ft.TextField(
-        label="Начальная высота (см)",
-        value="10", # Значение по умолчанию
-        keyboard_type=ft.KeyboardType.NUMBER,
-        border_color="#009753",
-        width=150
-    )
+    loading_ring = ft.ProgressRing(visible=False, color="#009753", width=40, height=40)
 
+    # Поля ввода
+    name_edit_field = ft.TextField(label="Название вида", border_color="#009753")
+    height_field = ft.TextField(label="Рост (см)", value="10", width=100, border_color="#009753")
+    chat_input = ft.TextField(
+        hint_text="Задайте вопрос агроному...", 
+        expand=True, 
+        on_submit=lambda _: send_chat_message()
+    )
+    chat_display = ft.Column(scroll=ft.ScrollMode.ALWAYS, expand=True, spacing=10)
+
+    # --- ЛОГИКА ВЫБОРА ФАЙЛА ---
     def on_file_picked(e: ft.FilePickerResultEvent):
         if not e.files or not e.files[0]: return
         try:
             file_info = e.files[0]
-            # Логика получения байтов файла
             if file_info.path and os.path.exists(file_info.path):
-                with open(file_info.path, "rb") as f:
-                    ui_state["image_bytes"] = f.read()
-            elif file_info.content:
-                ui_state["image_bytes"] = bytes(file_info.content)
+                with open(file_info.path, "rb") as f: ui_state["image_bytes"] = f.read()
+            elif file_info.content: ui_state["image_bytes"] = bytes(file_info.content)
             
-            # Отображаем выбранное фото на фоне
             main_image.src_base64 = base64.b64encode(ui_state["image_bytes"]).decode("utf-8")
             main_image.opacity = 1.0
-            
-            # Скрываем инструкцию и ошибки, показываем загрузку
             instruction_container.visible = False
             error_text.visible = False
             loading_ring.visible = True
             page.update()
             
-            # Запускаем ИИ в отдельном потоке
-            threading.Thread(target=process_image_with_ai, daemon=True).start()
-        except Exception as ex:
-            print(f"Ошибка при выборе файла: {ex}")
+            target = process_image_with_ai if ui_state["mode"] == "identify" else process_diagnosis_with_ai
+            threading.Thread(target=target, daemon=True).start()
+        except Exception as ex: print(f"Ошибка выбора файла: {ex}")
 
     local_picker.on_result = on_file_picked
 
+    # --- ОБРАБОТЧИКИ КНОПОК (FIX) ---
+    def start_new_scan(e):
+        ui_state["mode"] = "identify" # Прямое присваивание вместо setattr
+        local_picker.pick_files()
+
+    # --- РАБОТА С ИИ ---
     def process_image_with_ai():
-        ai = GigaChatService()
-        u_id = user_state.get("id") or 1
-        try:
-            with next(get_db()) as db:
-                result, err = ai.identify_plant_photo(db, u_id, ui_state["image_bytes"])
-                loading_ring.visible = False
-                
-                if result:
-                    ui_state["catalog_data"] = result
-                    populate_sheet(result)
-                else:
-                    # Выводим причину, почему ИИ не выдал результат
-                    error_text.value = f"ИИ не распознал объект: {err if err else 'попробуйте другое фото'}"
-                    error_text.visible = True
-                page.update()
-        except Exception as e:
+        ai = GigaChatService(); u_id = user_state.get("id") or 1
+        with next(get_db()) as db:
+            result, err = ai.identify_plant_photo(db, u_id, ui_state["image_bytes"])
             loading_ring.visible = False
-            error_text.value = f"Ошибка связи: {str(e)}"
-            error_text.visible = True
+            if result:
+                ui_state["catalog_data"] = result
+                populate_identify_sheet(result)
+            else:
+                error_text.value = "ИИ не распознал растение."; error_text.visible = True
             page.update()
 
-    # Фоновое изображение (заглушка до выбора фото)
-    main_image = ft.Image(
-        src="https://images.unsplash.com/photo-1491147334573-44cbb4602074?q=80&w=1000", 
-        fit=ft.ImageFit.COVER, 
-        opacity=0.4
-    )
-    
-    loading_ring = ft.ProgressRing(visible=False, color="#009753", width=50, height=50)
+    def process_diagnosis_with_ai():
+        ai = GigaChatService(); u_id = user_state.get("id") or 1
+        with next(get_db()) as db:
+            res_text, err = ai.diagnose_plant(db, u_id, ui_state["image_bytes"])
+            loading_ring.visible = False
+            if res_text:
+                ui_state["current_plant_info"] = "Новое растение (по фото)"
+                open_chat_interface(res_text)
+            else:
+                error_text.value = "Ошибка диагностики."; error_text.visible = True
+            page.update()
 
-    # Контейнер с текстом (ЦВЕТ ИЗМЕНЕН НА ЧЕРНЫЙ ПО ТВОЕМУ ЗАПРОСУ)
-    instruction_container = ft.Container(
-        content=ft.Column(
-            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            controls=[
-                ft.Icon(ft.Icons.FILTER_CENTER_FOCUS, size=60, color="black"),
-                ft.Text("Умный сканер", size=24, weight="bold", color="black"),
-                ft.Text("Сделайте фото или выберите файл", color="black"),
-            ]
-        ),
-        alignment=ft.alignment.center
-    )
-    
-    # Нижняя шторка (появляется после сканирования)
-    sheet_container = ft.Container(
-        bgcolor="white", 
-        padding=20, 
-        border_radius=ft.border_radius.only(top_left=30, top_right=30),
-        offset=ft.Offset(0, 1), # Спрятана внизу
-        animate_offset=ft.animation.Animation(600, ft.AnimationCurve.DECELERATE),
-    )
-    sheet_col = ft.Column(horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10)
-    sheet_container.content = sheet_col
+    def send_chat_message():
+        if not chat_input.value: return
+        user_msg = chat_input.value
+        chat_input.value = ""
+        chat_display.controls.append(ft.Text(f"Вы: {user_msg}", color="blue", weight="500"))
+        page.update()
+        
+        def ai_chat_thread():
+            ai = GigaChatService(); u_id = user_state.get("id") or 1
+            with next(get_db()) as db:
+                res, err = ai.ask_agronomist(db, u_id, ui_state["current_plant_info"], user_msg)
+                if res:
+                    content = res[0] if isinstance(res, tuple) else res
+                    chat_display.controls.append(ft.Container(
+                        content=ft.Text(f"Агроном: {content}"),
+                        bgcolor="#F0F4F8", padding=10, border_radius=10
+                    ))
+                page.update()
+        threading.Thread(target=ai_chat_thread, daemon=True).start()
 
-    def populate_sheet(data):
-        # Наполняем шторку данными от ИИ
-        name_edit_field.value = data.get('species_name', 'Неизвестное растение')
+    # --- ИНТЕРФЕЙС ШТОРОК ---
+    def populate_identify_sheet(data):
+        name_edit_field.value = data.get('species_name', '')
         sheet_col.controls = [
             ft.Container(width=40, height=4, bgcolor="grey300", border_radius=2),
             ft.Text("Настройка растения", size=18, weight="bold"),
             name_edit_field,
-            ft.Row([ft.Text("Высота:"), height_field], alignment="center"),
-            ft.ElevatedButton(
-                "Добавить в коллекцию и замерить", 
-                bgcolor="#009753", color="white", height=50, width=280,
-                on_click=lambda _: save_plant_with_log()
-            )
+            ft.Row([ft.Text("Рост:"), height_field], alignment="center"),
+            ft.ElevatedButton("Сохранить в сад", bgcolor="#009753", color="white", width=250, on_click=lambda _: save_plant())
         ]
-        sheet_container.offset = ft.Offset(0, 0) # Выезжает вверх
-        page.update()
+        sheet_container.offset = ft.Offset(0, 0); page.update()
 
-    def save_plant_with_log():
-        if not ui_state["catalog_data"]: return
-        
-        # Обновляем имя из поля ввода
-        ui_state["catalog_data"]['species_name'] = name_edit_field.value
-        h_val = float(height_field.value) if height_field.value else 0.0
+    def open_chat_interface(initial_text):
+        chat_display.controls.clear()
+        chat_display.controls.append(ft.Container(
+            content=ft.Text(initial_text),
+            padding=15, bgcolor="#E8F5E9", border_radius=15
+        ))
+        sheet_col.controls = [
+            ft.Container(width=40, height=4, bgcolor="grey300", border_radius=2),
+            ft.Text("Чат с агрономом", weight="bold"),
+            ft.Container(content=chat_display, height=350),
+            ft.Row([chat_input, ft.IconButton(ft.Icons.SEND_ROUNDED, icon_color="#009753", on_click=lambda _: send_chat_message())])
+        ]
+        sheet_container.offset = ft.Offset(0, 0); page.update()
+
+    # --- ВЫБОР ИЗ СУЩЕСТВУЮЩИХ ---
+    def show_existing_plants_dialog(e):
         u_id = user_state.get("id") or 1
-
         with next(get_db()) as db:
-            # Создаем запись о растении
-            plant, err = PlantService.confirm_and_create_plant(
-                db, u_id, ui_state["catalog_data"], image_bytes=ui_state["image_bytes"]
-            )
-            
-            if plant:
-                # Сразу добавляем первый замер высоты
-                PlantService.add_measurement(
-                    db, 
-                    plant_id=plant.plant_id, 
-                    height=h_val, 
-                    note="Первичный замер при сканировании",
-                    image_bytes=ui_state["image_bytes"]
-                )
-                nav("/my_plants")
-            else:
-                print(f"Ошибка сохранения: {err}")
+            plants = db.query(Plant).filter(Plant.user_id == u_id, Plant.is_active == 1).all()
+        
+        if not plants:
+            error_text.value = "У вас пока нет растений в саду."; error_text.visible = True
+            page.update(); return
 
-    # Сборка финального View
+        def select_and_diagnose(p):
+            dlg.open = False
+            ui_state["current_plant_info"] = f"Растение: {p.custom_name}, Статус: {p.status_text}"
+            loading_ring.visible = True; page.update()
+            
+            def text_diag():
+                ai = GigaChatService()
+                with next(get_db()) as db:
+                    res, err = ai.ask_agronomist(db, u_id, ui_state["current_plant_info"], "Проведи диагностику.")
+                    loading_ring.visible = False
+                    open_chat_interface(res[0] if res else "Ошибка связи.")
+            threading.Thread(target=text_diag, daemon=True).start()
+
+        dlg = ft.AlertDialog(
+            title=ft.Text("Выберите растение"),
+            content=ft.Column([ft.ListTile(title=ft.Text(p.custom_name), on_click=lambda _, p=p: select_and_diagnose(p)) for p in plants], scroll=True, height=300, tight=True),
+        )
+        page.overlay.append(dlg); dlg.open = True; page.update()
+
+    # --- ГЛАВНЫЙ ЭКРАН ---
+    main_image = ft.Image(src="https://images.unsplash.com/photo-1491147334573-44cbb4602074?q=80&w=1000", fit=ft.ImageFit.COVER, opacity=0.4)
+    
+    instruction_container = ft.Container(
+        content=ft.Column([
+            ft.Icon(ft.Icons.CAMERA_ALT_OUTLINED, size=60, color="black"),
+            ft.Text("GreenThumb Scanner", size=24, weight="bold", color="black"),
+            ft.Text("Добавьте фото или выберите из сада", color="black"),
+        ], horizontal_alignment="center"),
+        alignment=ft.alignment.center
+    )
+
+    sheet_container = ft.Container(
+        bgcolor="white", padding=20, border_radius=ft.border_radius.only(top_left=30, top_right=30),
+        offset=ft.Offset(0, 1), animate_offset=ft.animation.Animation(600, ft.AnimationCurve.DECELERATE),
+    )
+    sheet_col = ft.Column(horizontal_alignment="center", spacing=10)
+    sheet_container.content = sheet_col
+
+    action_buttons = ft.Container(
+        content=ft.Row([
+            ft.ElevatedButton("Новое фото", icon=ft.Icons.ADD_A_PHOTO, on_click=start_new_scan),
+            ft.FloatingActionButton(icon=ft.Icons.SUPPORT_AGENT, bgcolor="#009753", on_click=show_existing_plants_dialog)
+        ], alignment="center", spacing=20),
+        bottom=120, left=0, right=0
+    )
+
+    def save_plant():
+        # Здесь логика сохранения в базу
+        nav("/my_plants")
+
     return ft.View(
-        route="/scanner",
-        padding=0,
+        route="/scanner", padding=0,
         controls=[
-            ft.Stack(
-                expand=True,
-                controls=[
-                    # Слой 1: Фон
-                    ft.Container(expand=True, bgcolor="black", content=main_image),
-                    
-                    # Слой 2: Инструкция (Центр)
-                    instruction_container,
-                    
-                    # Слой 3: Загрузка и ошибки (Центр)
-                    ft.Container(
-                        content=ft.Column([
-                            loading_ring,
-                            error_text
-                        ], horizontal_alignment="center", tight=True),
-                        alignment=ft.alignment.center
-                    ),
-                    
-                    # Слой 4: Кнопка выбора (Низ)
-                    ft.Container(
-                        content=ft.ElevatedButton(
-                            "Выбрать фото / Камера", 
-                            on_click=lambda _: local_picker.pick_files(),
-                            bgcolor="#009753", color="white",
-                            style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=10))
-                        ),
-                        bottom=120, left=0, right=0, alignment=ft.alignment.center
-                    ),
-                    
-                    # Слой 5: Шторка с данными
-                    ft.Container(content=sheet_container, bottom=0, left=0, right=0)
-                ]
-            )
+            ft.Stack(expand=True, controls=[
+                ft.Container(expand=True, bgcolor="#F0F0F0", content=main_image),
+                instruction_container,
+                ft.Container(content=loading_ring, alignment=ft.alignment.center),
+                action_buttons,
+                ft.Container(content=sheet_container, bottom=0, left=0, right=0)
+            ])
         ]
     )
