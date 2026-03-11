@@ -34,6 +34,7 @@ class CareService:
         # на основе default_watering_interval из каталога. это создает 
         # непрерывный цикл ухода без участия пользователя.
         
+        # Используем .get() для получения актуального состояния задачи
         task = db.query(CareCalendar).get(task_id)
         if not task:
             return None, "Задача не найдена."
@@ -64,6 +65,10 @@ class CareService:
         try:
             db.add(new_task)
             db.commit()
+            
+            # ВАЖНО: Обновляем объект растения из базы, чтобы Flet увидел новую дату полива
+            db.refresh(plant) 
+            
             return new_task, None 
         except Exception as e:
             db.rollback()

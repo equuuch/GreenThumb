@@ -1,6 +1,7 @@
 import flet as ft
 from database.session import init_db
 from urllib.parse import unquote
+import time
 
 # Импорты вьюх
 from views.home_view import HomeView
@@ -59,18 +60,24 @@ def main(page: ft.Page):
 
     # --- ФУНКЦИЯ НАВИГАЦИИ ---
     def navigate(route_str):
+        # Принудительно заставляем роутер сменить путь
+        page.route = route_str
         page.go(route_str)
+        # Дополнительный апдейт для синхронизации
+        page.update()
 
     # --- ГЛАВНЫЙ ОБРАБОТЧИК МАРШРУТОВ ---
     def handle_route_change(e):
         print(f"DEBUG: Текущий маршрут: {page.route}")
+        
+        # 1. Полная очистка стека вьюх перед созданием новой
         page.views.clear()
         
         nav_map = {"/user_home": 0, "/my_plants": 1, "/scanner": 2, "/profile": 3}
         current_index = nav_map.get(page.route, 0)
 
         try:
-            # 1. Динамические маршруты
+            # 2. Динамические маршруты
             if page.route.startswith("/reference/"):
                 try:
                     catalog_id = int(page.route.split("/")[-1])
@@ -94,11 +101,13 @@ def main(page: ft.Page):
                 pid = int(page.route.split("/")[-1])
                 v = MyPlantDetailsView(page, navigate, pid, USER_STATE)
 
-            # 2. Стандартные маршруты
+            # 3. Стандартные маршруты
             elif page.route == "/user_home":
                 v = UserHomeView(page, navigate, USER_STATE)
             
             elif page.route == "/my_plants":
+                # Небольшая пауза помогает SQLite "отпустить" файл после коммита в деталях
+                time.sleep(0.05)
                 v = MyPlantsView(page, navigate, USER_STATE)
             
             elif page.route == "/scanner":
@@ -137,6 +146,7 @@ def main(page: ft.Page):
                     navigate(routes[idx])
                 v.bottom_appbar = NavBar(current_index, on_nav_click)
             
+            # Добавляем новую, свежесозданную вьюху
             page.views.append(v)
 
         except Exception as ex:
@@ -145,7 +155,15 @@ def main(page: ft.Page):
         
         page.update()
 
+    # Очистка вьюхи при нажатии системной кнопки "Назад" (Android/Web)
+    def handle_view_pop(e):
+        page.views.pop()
+        top_view = page.views[-1]
+        page.go(top_view.route)
+
     page.on_route_change = handle_route_change
+    page.on_view_pop = handle_view_pop
+    
     page.go(page.route or "/")
 
 if __name__ == "__main__":

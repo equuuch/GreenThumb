@@ -13,16 +13,20 @@ def MyPlantsView(page: ft.Page, nav, user_state):
 
     user_id = user_state.get("id") or 1
 
-    # 1. ЗАГРУЗКА ДАННЫХ С ЖАДНОЙ ЗАГРУЗКОЙ (Eager Loading)
+    # 1. ЗАГРУЗКА ДАННЫХ
+    # Используем контекстный менеджер 'with', чтобы сессия закрывалась сразу после чтения
     with next(get_db()) as db:
+        db.expire_all()  # Сбрасываем кэш сессии
         my_plants = (
             db.query(Plant)
             .options(joinedload(Plant.catalog_info))
             .filter(Plant.user_id == user_id, Plant.is_active == 1)
             .all()
         )
+        # Технический принт для тебя в консоль, чтобы видеть время полива из базы
+        for p in my_plants:
+            print(f"DEBUG: {p.custom_name} | Last watered: {p.last_watered_at}")
 
-    # Вспомогательная функция для выбора цвета индикаторов
     def get_status_color(val):
         if val > 0.6: return "#009753"  # Зеленый
         if val > 0.3: return "#FFC107"  # Желтый
@@ -58,28 +62,26 @@ def MyPlantsView(page: ft.Page, nav, user_state):
 
     # 3. ФУНКЦИЯ КАРТОЧКИ
     def create_plant_card(plant_obj):
-        # ИСПРАВЛЕНИЕ ПУТИ:
-        # В AddPlantView мы сохраняем как "/plants/filename.jpg"
-        # Flet ищет в папке assets. Убираем ведущий слэш, чтобы получилось "plants/filename.jpg"
-        if plant_obj.image_url:
-            img_path = plant_obj.image_url.lstrip("/") 
-        else:
-            img_path = "https://images.unsplash.com/photo-1453904300235-0f2f60b15b5d?q=80&w=300"
+        img_path = f"assets/{plant_obj.image_url}" if plant_obj.image_url else "https://images.unsplash.com/photo-1453904300235-0f2f60b15b5d?q=80&w=300"
         
-        # Теперь catalog_info доступен благодаря joinedload
         cat = plant_obj.catalog_info
+        water_val = 0.0 # По умолчанию — пить хочет
 
-        # РАСЧЕТ ПАРАМЕТРОВ
-        # Влага
-        water_val = 0.5
         if plant_obj.last_watered_at and cat and cat.default_watering_interval:
-            days_since = (datetime.now() - plant_obj.last_watered_at).days
-            water_val = max(0.0, min(1.0, 1.0 - (days_since / cat.default_watering_interval)))
+            # Считаем разницу максимально точно
+            diff_seconds = (datetime.now() - plant_obj.last_watered_at).total_seconds()
+            interval_seconds = cat.default_watering_interval * 24 * 3600
+            
+            # Если полили в течение последних 60 секунд — считаем 100% влажности
+            if diff_seconds < 60:
+                water_val = 1.0
+            else:
+                water_val = max(0.0, min(1.0, 1.0 - (diff_seconds / interval_seconds)))
+        elif plant_obj.last_watered_at:
+            # Если даты есть, но нет интервала в каталоге — просто считаем "нормой"
+            water_val = 0.8
         
-        # Свет
         light_val = cat.default_light_level if cat else 0.5
-        
-        # Здоровье (базируется на влаге)
         health_val = 1.0 if water_val > 0.2 else 0.4
 
         return ft.Container(
@@ -95,7 +97,6 @@ def MyPlantsView(page: ft.Page, nav, user_state):
             content=ft.Column(
                 spacing=0,
                 controls=[
-                    # КАРТИНКА (AspectRatio 1:1)
                     ft.Container(
                         aspect_ratio=1.0,
                         content=ft.Image(
@@ -104,7 +105,6 @@ def MyPlantsView(page: ft.Page, nav, user_state):
                             border_radius=ft.border_radius.only(top_left=25, top_right=25)
                         )
                     ),
-                    # ИНФО-БЛОК
                     ft.Container(
                         padding=ft.padding.only(left=15, right=15, top=12, bottom=15),
                         content=ft.Column(
@@ -119,7 +119,6 @@ def MyPlantsView(page: ft.Page, nav, user_state):
                                     overflow=ft.TextOverflow.ELLIPSIS,
                                     font_family="Montserrat"
                                 ),
-                                # Ряд динамических иконок
                                 ft.Row([
                                     ft.Icon(ft.Icons.WATER_DROP, size=18, color=get_status_color(water_val)),
                                     ft.Icon(ft.Icons.WB_SUNNY, size=18, color=get_status_color(light_val)),
@@ -132,7 +131,6 @@ def MyPlantsView(page: ft.Page, nav, user_state):
             )
         )
 
-    # 4. СЕТКА (Grid)
     grid = ft.ResponsiveRow(spacing=15, run_spacing=15)
     
     if not my_plants:
@@ -143,10 +141,7 @@ def MyPlantsView(page: ft.Page, nav, user_state):
                     ft.Icon(ft.Icons.SEARCH_OFF, size=80, color="grey300"),
                     ft.Text(
                         "У вас пока нет растений\nНажмите +, чтобы добавить первое!", 
-                        text_align="center", 
-                        size=16,
-                        color="grey500", 
-                        font_family="Montserrat"
+                        text_align="center", size=16, color="grey500", font_family="Montserrat"
                     )
                 ], horizontal_alignment="center"),
                 col=12
@@ -156,7 +151,6 @@ def MyPlantsView(page: ft.Page, nav, user_state):
         for p in my_plants:
             grid.controls.append(create_plant_card(p))
 
-    # СБОРКА ФИНАЛЬНОГО ВИДА
     view.controls.append(
         ft.ListView(
             controls=[
