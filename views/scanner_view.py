@@ -3,260 +3,230 @@ import threading
 import base64
 import urllib3
 from database.session import get_db
-from database.models import Plant, AIConsultation
+from database.models import Plant
 from services.ai_services import GigaChatService
 
-# Отключаем предупреждения SSL
+# Отключаем предупреждения SSL для работы с GigaChat
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 def ScannerView(page: ft.Page, nav, user_state, _=None):
     """
-    Версия 1.5: Добавлена возможность прикрепления фото прямо в чате.
+    Версия 1.6: Полное разделение логики 'Добавить растение' и 'Чат с ИИ'.
     """
     
     # --- СЛУЖЕБНЫЕ ОБЪЕКТЫ ---
-    main_picker = ft.FilePicker() # Для главного экрана
-    chat_picker = ft.FilePicker() # Для чата
+    main_picker = ft.FilePicker()
+    chat_picker = ft.FilePicker()
     
     for picker in [main_picker, chat_picker]:
         if picker not in page.overlay:
             page.overlay.append(picker)
     
     ui_state = {
-        "image_bytes": None,          # Основное фото (сканер)
-        "chat_image_pending": None,   # Временное фото для чата
+        "image_bytes": None,          # Фото для обработки
+        "chat_image_pending": None,   # Фото, прикрепленное внутри чата
         "current_plant_info": "Новое растение",
         "chat_messages": [],
         "is_sending": False 
     }
 
-    # --- UI ЭЛЕМЕНТЫ ---
-    loading_ring = ft.ProgressRing(visible=False, color="#009753", width=50, height=50, stroke_width=4)
+    # --- ЭЛЕМЕНТЫ ИНТЕРФЕЙСА ---
+    loading_ring = ft.ProgressRing(visible=False, color="#009753", width=50, height=50)
+    
     chat_display = ft.Column(scroll=ft.ScrollMode.ALWAYS, expand=True, spacing=15)
+    
     chat_input = ft.TextField(
-        hint_text="Задайте вопрос или прикрепите фото...", expand=True, border_radius=15, 
+        hint_text="Спросите агронома...", expand=True, border_radius=15, 
         bgcolor="#F8F9FA", content_padding=15, on_submit=lambda _: send_chat_message()
     )
 
-    # --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
+    # --- ЛОГИКА ВЫБОРА (ДИАЛОГ) ---
 
-    def on_sheet_animation_end(e):
-        if sheet_container.offset.y == 1:
-            action_buttons.visible = True
+    def start_diagnosis(e):
+        """Режим: Спросить ИИ"""
+        choice_dialog.open = False
+        image_preview_card.visible = True
+        instruction_container.visible = False
+        loading_ring.visible = True
+        page.update()
+        
+        def ai_task():
+            ai = GigaChatService()
+            # Вызываем диагностику по фото
+            res = ai.diagnose_plant(next(get_db()), user_state.get("id", 1), ui_state["image_bytes"])
+            loading_ring.visible = False
+            if res:
+                # Открываем чат с ответом ИИ
+                open_chat_interface(res[0] if isinstance(res, tuple) else res)
+            else:
+                page.snack_bar = ft.SnackBar(ft.Text("Не удалось проанализировать фото")); page.snack_bar.open = True
+                close_sheet()
             page.update()
+            
+        threading.Thread(target=ai_task, daemon=True).start()
 
-    def close_sheet(e=None):
-        sheet_container.offset = ft.Offset(0, 1)
-        image_preview_card.visible = False
-        instruction_container.visible = True
-        loading_ring.visible = False
-        ui_state["image_bytes"] = None
-        ui_state["chat_image_pending"] = None
-        ui_state["chat_messages"] = []
-        page.update()
+    def start_adding(e):
+        """Режим: Добавить в коллекцию"""
+        choice_dialog.open = False
+        # Сохраняем фото в сессию, чтобы экран /add_plant мог его забрать
+        page.session.set("pending_image", ui_state["image_bytes"])
+        nav("/add_plant") 
 
-    def create_chat_bubble(role, text, img_bytes=None):
-        is_user = role == "user"
-        content_items = []
-        
-        if img_bytes:
-            img_b64 = base64.b64encode(img_bytes).decode("utf-8")
-            content_items.append(ft.Image(src_base64=img_b64, width=200, border_radius=10))
-        
-        if text:
-            content_items.append(ft.Text(text, color="white" if is_user else "black", size=14))
+    choice_dialog = ft.AlertDialog(
+        title=ft.Text("Фото получено"),
+        content=ft.Text("Что вы хотите сделать с этим изображением?"),
+        actions=[
+            ft.TextButton("Проконсультироваться", icon=ft.Icons.CHAT_BUBBLE_OUTLINE, on_click=start_diagnosis),
+            ft.ElevatedButton("Добавить в мой сад", icon=ft.Icons.ADD_ALARM, bgcolor="#009753", color="white", on_click=start_adding),
+        ],
+        actions_alignment=ft.MainAxisAlignment.CENTER,
+    )
 
-        return ft.Column([
-            ft.Container(
-                content=ft.Column(content_items, spacing=5, tight=True),
-                bgcolor="#009753" if is_user else "#F0F4F8",
-                padding=ft.padding.symmetric(vertical=12, horizontal=16),
-                border_radius=ft.border_radius.only(
-                    top_left=18, top_right=18, 
-                    bottom_left=18 if is_user else 2, bottom_right=2 if is_user else 18
-                ),
-            ),
-            ft.Text("Вы" if is_user else "Агроном GreenThumb", size=10, color="grey500")
-        ], horizontal_alignment=ft.CrossAxisAlignment.END if is_user else ft.CrossAxisAlignment.START)
+    # --- ОБРАБОТКА ФАЙЛОВ ---
 
-    def update_chat_ui():
-        chat_display.controls.clear()
-        for msg in ui_state["chat_messages"]:
-            chat_display.controls.append(create_chat_bubble(msg["role"], msg.get("text"), msg.get("image")))
-        if ui_state["is_sending"]:
-            chat_display.controls.append(ft.Text("Агроном изучает данные...", size=12, italic=True, color="grey500"))
-        page.update()
+    def on_main_file_result(e: ft.FilePickerResultEvent):
+        if not e.files: return
         try:
-            if chat_display.page: chat_display.scroll_to(offset=-1, duration=300)
-        except: pass
-
-    # --- ЛОГИКА ЧАТА С ФОТО ---
-
-    def handle_chat_file(e: ft.FilePickerResultEvent):
-        if e.files:
             with open(e.files[0].path, "rb") as f:
-                ui_state["chat_image_pending"] = f.read()
-            page.snack_bar = ft.SnackBar(ft.Text("Фото прикреплено к сообщению!"), bgcolor="#009753")
-            page.snack_bar.open = True
+                ui_state["image_bytes"] = f.read()
+            
+            # Показываем превью на фоне и открываем диалог выбора
+            main_img_view.src_base64 = base64.b64encode(ui_state["image_bytes"]).decode("utf-8")
+            page.overlay.append(choice_dialog)
+            choice_dialog.open = True
             page.update()
+        except Exception as ex:
+            print(f"File error: {ex}")
 
-    chat_picker.on_result = handle_chat_file
+    main_picker.on_result = on_main_file_result
+
+    # --- ФУНКЦИИ ЧАТА ---
 
     def send_chat_message():
-        if (not chat_input.value and not ui_state["chat_image_pending"]) or ui_state["is_sending"]:
-            return
-            
+        if (not chat_input.value and not ui_state["chat_image_pending"]) or ui_state["is_sending"]: return
+        
         user_text = chat_input.value
         current_img = ui_state["chat_image_pending"]
         
         chat_input.value = ""
-        ui_state["chat_image_pending"] = None # Сброс
-        
+        ui_state["chat_image_pending"] = None
         ui_state["chat_messages"].append({"role": "user", "text": user_text, "image": current_img})
         ui_state["is_sending"] = True
         update_chat_ui()
         
         def ai_thread():
             ai = GigaChatService()
-            u_id = user_state.get("id") or 1
             with next(get_db()) as db:
                 try:
-                    # ХИТРОСТЬ: Если есть фото, вызываем диагностику, иначе обычный чат
                     if current_img:
-                        res = ai.diagnose_plant(db, u_id, current_img)
+                        res = ai.diagnose_plant(db, user_state.get("id", 1), current_img)
+                        ans = res[0] if res else "Не удалось распознать фото."
                     else:
-                        res, _ = ai.ask_agronomist(db, u_id, ui_state["current_plant_info"], user_text)
-                    
-                    if res:
-                        content = res[0] if isinstance(res, tuple) else res
-                        ui_state["chat_messages"].append({"role": "bot", "text": content})
+                        res, _ = ai.ask_agronomist(db, user_state.get("id", 1), ui_state["current_plant_info"], user_text)
+                        ans = res[0] if isinstance(res, tuple) else res
+                    ui_state["chat_messages"].append({"role": "bot", "text": ans})
                 finally:
                     ui_state["is_sending"] = False
                     update_chat_ui()
+                    
         threading.Thread(target=ai_thread, daemon=True).start()
 
-    def open_chat_interface(initial_text):
-        ui_state["chat_messages"] = [{"role": "bot", "text": initial_text}]
-        action_buttons.visible = False 
-        
+    def update_chat_ui():
+        chat_display.controls.clear()
+        for msg in ui_state["chat_messages"]:
+            is_user = msg["role"] == "user"
+            content = ft.Column(spacing=5, tight=True)
+            if msg.get("image"):
+                img_b64 = base64.b64encode(msg["image"]).decode()
+                content.controls.append(ft.Image(src_base64=img_b64, width=200, border_radius=10))
+            if msg.get("text"):
+                content.controls.append(ft.Text(msg["text"], color="white" if is_user else "black"))
+
+            chat_display.controls.append(
+                ft.Column([
+                    ft.Container(
+                        content=content,
+                        bgcolor="#009753" if is_user else "#F0F4F8",
+                        padding=12, border_radius=15
+                    ),
+                    ft.Text("Вы" if is_user else "Агроном", size=10, color="grey500")
+                ], horizontal_alignment=ft.CrossAxisAlignment.END if is_user else ft.CrossAxisAlignment.START)
+            )
+        page.update()
+        try: chat_display.scroll_to(offset=-1, duration=300)
+        except: pass
+
+    def open_chat_interface(text):
+        ui_state["chat_messages"] = [{"role": "bot", "text": text}]
+        action_buttons.visible = False
         sheet_col.controls = [
-            ft.Container(width=40, height=4, bgcolor="grey300", border_radius=2, margin=ft.margin.only(bottom=10)),
+            ft.Container(width=40, height=4, bgcolor="grey300", border_radius=2, margin=10),
             ft.Row([
                 ft.Text("Консультация", size=20, weight="bold"),
-                ft.IconButton(ft.Icons.CLOSE, icon_color="grey600", on_click=close_sheet)
-            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-            ft.Divider(height=1, color="#EEEEEE"),
-            ft.Container(content=chat_display, height=400, padding=ft.padding.symmetric(vertical=10)),
+                ft.IconButton(ft.Icons.CLOSE, on_click=close_sheet)
+            ], alignment="spaceBetween"),
+            ft.Divider(height=1),
+            ft.Container(content=chat_display, height=380, padding=10),
             ft.Row([
                 ft.IconButton(ft.Icons.ATTACH_FILE, icon_color="#009753", on_click=lambda _: chat_picker.pick_files()),
                 chat_input,
-                ft.IconButton(ft.Icons.SEND, icon_color="white", bgcolor="#009753", on_click=lambda _: send_chat_message())
-            ], vertical_alignment=ft.CrossAxisAlignment.CENTER)
+                ft.IconButton(ft.Icons.SEND, bgcolor="#009753", icon_color="white", on_click=lambda _: send_chat_message())
+            ])
         ]
         sheet_container.offset = ft.Offset(0, 0)
         update_chat_ui()
 
-    # --- ДИАЛОГ САДА ---
-
-    def show_existing_plants_dialog(e):
-        u_id = user_state.get("id") or 1
-        with next(get_db()) as db:
-            plants = db.query(Plant).filter(Plant.user_id == u_id, Plant.is_active == 1).all()
-        
-        if not plants:
-            page.snack_bar = ft.SnackBar(ft.Text("Ваш сад пока пуст!")); page.snack_bar.open = True; page.update(); return
-
-        def select_plant(p):
-            dlg.open = False
-            ui_state["current_plant_info"] = f"Растение: {p.custom_name}, Состояние: {p.status_text}"
-            loading_ring.visible = True
-            page.update()
-            
-            def plant_task():
-                ai = GigaChatService()
-                with next(get_db()) as db:
-                    res, _ = ai.ask_agronomist(db, u_id, ui_state["current_plant_info"], "Дай краткий отчет по уходу.")
-                    loading_ring.visible = False
-                    if res: open_chat_interface(res[0] if isinstance(res, tuple) else res)
-                    else: page.update()
-            threading.Thread(target=plant_task, daemon=True).start()
-
-        list_items = [
-            ft.ListTile(
-                title=ft.Text(p.custom_name, weight="bold"),
-                subtitle=ft.Text(f"Статус: {p.status_text}"),
-                leading=ft.Icon(ft.Icons.ECO, color="#009753"),
-                on_click=lambda _, plant=p: select_plant(plant)
-            ) for p in plants
-        ]
-
-        dlg = ft.AlertDialog(
-            title=ft.Text("Ваш сад"),
-            content=ft.Column(list_items, scroll=True, height=350, tight=True),
-            shape=ft.RoundedRectangleBorder(radius=20)
-        )
-        page.overlay.append(dlg); dlg.open = True; page.update()
-
-    # --- ГЛАВНЫЙ СКАНЕР ---
-
-    def handle_main_file(e: ft.FilePickerResultEvent):
-        if not e.files: return
-        try:
-            with open(e.files[0].path, "rb") as f: ui_state["image_bytes"] = f.read()
-            main_img_view.src_base64 = base64.b64encode(ui_state["image_bytes"]).decode("utf-8")
-            image_preview_card.visible = True; instruction_container.visible = False; loading_ring.visible = True; page.update()
-            
-            threading.Thread(target=lambda: (
-                ai := GigaChatService(),
-                res := ai.diagnose_plant(next(get_db()), user_state.get("id", 1), ui_state["image_bytes"]),
-                setattr(loading_ring, 'visible', False),
-                open_chat_interface(res[0]) if res else close_sheet()
-            ), daemon=True).start()
-        except: pass
-
-    main_picker.on_result = handle_main_file
+    def close_sheet(e=None):
+        sheet_container.offset = ft.Offset(0, 1)
+        image_preview_card.visible = False
+        instruction_container.visible = True
+        action_buttons.visible = True
+        ui_state["image_bytes"] = None
+        page.update()
 
     # --- ВЕРСТКА ---
-
     main_img_view = ft.Image(src="", fit=ft.ImageFit.COVER, border_radius=15)
-    image_preview_card = ft.Container(content=main_img_view, width=300, height=400, bgcolor="white", padding=10, border_radius=25, visible=False)
+    image_preview_card = ft.Container(content=main_img_view, width=300, height=400, border_radius=20, visible=False)
     
     instruction_container = ft.Container(
         content=ft.Column([
-            ft.Icon(ft.Icons.CAMERA_ENHANCE_OUTLINED, size=80, color="#E0E0E0"),
-            ft.Text("GreenThumb AI Scanner", size=24, weight="bold"),
-            ft.Text("Сделайте фото или выберите растение", color="grey600", text_align="center")
-        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10),
+            ft.Icon(ft.Icons.CAMERA_ALT_OUTLINED, size=80, color="grey300"),
+            ft.Text("GreenThumb Scanner", size=22, weight="bold"),
+            ft.Text("Сфотографируйте растение", color="grey500")
+        ], horizontal_alignment="center"),
         alignment=ft.alignment.center
     )
 
     sheet_container = ft.Container(
-        bgcolor="white", padding=25, border_radius=ft.border_radius.only(top_left=35, top_right=35),
-        offset=ft.Offset(0, 1), animate_offset=600,
-        on_animation_end=on_sheet_animation_end,
-        shadow=ft.BoxShadow(blur_radius=40, color=ft.Colors.with_opacity(0.1, "black"))
+        bgcolor="white", padding=20, offset=ft.Offset(0, 1), animate_offset=600,
+        border_radius=ft.border_radius.only(top_left=30, top_right=30),
+        shadow=ft.BoxShadow(blur_radius=20, color="black12")
     )
-    sheet_col = ft.Column(horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5)
+    sheet_col = ft.Column()
     sheet_container.content = sheet_col
 
     action_buttons = ft.Container(
         content=ft.Row([
-            ft.ElevatedButton("Фото", icon=ft.Icons.ADD_A_PHOTO, on_click=lambda _: main_picker.pick_files()),
-            ft.FloatingActionButton(icon=ft.Icons.SUPPORT_AGENT, bgcolor="#009753", on_click=show_existing_plants_dialog)
-        ], alignment=ft.MainAxisAlignment.CENTER, spacing=25), bottom=80, left=0, right=0
+            ft.FloatingActionButton(
+                content=ft.Row([ft.Icon(ft.Icons.ADD_A_PHOTO), ft.Text(" Начать")], alignment="center"),
+                width=160, bgcolor="#009753", on_click=lambda _: main_picker.pick_files()
+            )
+        ], alignment="center"),
+        bottom=40, left=0, right=0
     )
 
     return ft.View(
-        route="/scanner", padding=0,
+        route="/scanner",
+        padding=0,
         controls=[
             ft.Stack(
-                expand=True, 
+                expand=True,
                 controls=[
                     ft.Container(expand=True, bgcolor="#FDFDFD"),
                     instruction_container,
-                    ft.Container(content=image_preview_card, alignment=ft.alignment.center),
-                    ft.Container(content=loading_ring, alignment=ft.alignment.center),
-                    ft.Container(content=sheet_container, bottom=0, left=0, right=0),
+                    ft.Container(image_preview_card, alignment=ft.alignment.center),
+                    ft.Container(loading_ring, alignment=ft.alignment.center),
+                    ft.Container(sheet_container, bottom=0, left=0, right=0),
                     action_buttons
                 ]
             )

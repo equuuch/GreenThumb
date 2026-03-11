@@ -1,5 +1,6 @@
 import flet as ft
 from database.session import init_db
+from urllib.parse import unquote
 
 # Импорты ваших вьюх
 from views.home_view import HomeView
@@ -13,19 +14,25 @@ from views.analytics_view import AnalyticsView
 from views.my_plant_details_view import MyPlantDetailsView
 from views.details_view import DetailsView
 from views.search_view import SearchView
-from urllib.parse import unquote
 
-# Попытка импорта NavBar (если файла нет, будет None)
+# Импорт новой вьюхи добавления растения
+try:
+    from views.add_plant_view import AddPlantView
+except ImportError:
+    AddPlantView = None
+    print("ВНИМАНИЕ: Файл views/add_plant_view.py не найден!")
+
+# Попытка импорта NavBar
 try:
     from components.nav_bar import NavBar
 except ImportError:
     NavBar = None
 
-# Глобальный стейт приложения (user_id=None означает Гость)
+# Глобальный стейт приложения
 USER_STATE = {"id": None, "name": "Гость"}
 
 def main(page: ft.Page):
-    # 1. Инициализация БД при старте
+    # 1. Инициализация БД
     init_db()
 
     page.title = "GreenThumb"
@@ -37,54 +44,46 @@ def main(page: ft.Page):
     page.window.width = 400
     page.window.height = 800
 
-    # Создаем пикер ОДИН раз и сохраняем его прямо в объект страницы
     if not hasattr(page, "scan_picker"):
         page.scan_picker = ft.FilePicker()
         page.overlay.append(page.scan_picker)
 
     # --- ФУНКЦИЯ НАВИГАЦИИ ---
     def navigate(route_str):
-        page.route = route_str
-        handle_route_change(None)
+        # Используем go, но без ручного вызова handle_route_change
+        page.go(route_str)
 
     # --- ГЛАВНЫЙ ОБРАБОТЧИК МАРШРУТОВ ---
     def handle_route_change(e):
         print(f"DEBUG: Текущий маршрут: {page.route}")
         page.views.clear()
         
-        # Индекс для нижней навигации (NavBar)
         nav_map = {"/user_home": 0, "/my_plants": 1, "/scanner": 2, "/profile": 3}
         current_index = nav_map.get(page.route, 0)
 
         try:
-            # 1. Логика динамических маршрутов (Справочник /reference/ID)
+            # 1. Динамические маршруты
             if page.route.startswith("/reference/"):
                 try:
                     catalog_id = int(page.route.split("/")[-1])
                     v = ReferenceView(page, navigate, catalog_id, USER_STATE)
                 except: v = HomeView(page, navigate)
             
-            # 2. Логика поиска с ИИ (/search?q=Запрос)
             elif page.route.startswith("/search"):
                 try:
                     query = unquote(page.route.split("q=")[-1])
                     v = SearchView(page, navigate, query, USER_STATE)
-                except Exception as ex:
-                    print(f"ОШИБКА ПОИСКА: {ex}")
-                    v = HomeView(page, navigate)
+                except: v = HomeView(page, navigate)
 
-            # 3. Авторизация с поддержкой режима (?mode=register)
             elif page.route.startswith("/auth"):
                 is_register = "?mode=register" in page.route
-                v = AuthView(page, navigate, USER_STATE, is_register_mode=is_register)
+                v = Auth_view = AuthView(page, navigate, USER_STATE, is_register_mode=is_register)
             
-            # 4. Детали конкретного растения (/my_plant_details/ID)
-            # ИСПРАВЛЕНО: Убрали try-except, чтобы понять, почему не переходит
             elif page.route.startswith("/my_plant_details/"):
                 pid = int(page.route.split("/")[-1])
                 v = MyPlantDetailsView(page, navigate, pid, USER_STATE)
 
-            # 5. Стандартные маршруты
+            # 2. Стандартные маршруты
             elif page.route == "/user_home":
                 v = UserHomeView(page, navigate, USER_STATE)
             
@@ -92,8 +91,13 @@ def main(page: ft.Page):
                 v = MyPlantsView(page, navigate, USER_STATE)
             
             elif page.route == "/scanner":
-                # Передаем стабильный пикер из page
                 v = ScannerView(page, navigate, USER_STATE, page.scan_picker)
+            
+            elif page.route == "/add_plant":
+                if AddPlantView:
+                    v = AddPlantView(page, navigate, USER_STATE)
+                else:
+                    v = ft.View("/error", controls=[ft.Text("Ошибка: AddPlantView не найден")])
             
             elif page.route == "/profile":
                 v = ProfileView(page, navigate, USER_STATE)
@@ -108,12 +112,10 @@ def main(page: ft.Page):
                 v = HomeView(page, navigate)
             
             else:
-                # Если маршрут не найден, возвращаем на главную
-                print(f"DEBUG: Маршрут {page.route} не распознан")
                 v = HomeView(page, navigate)
 
-            # --- НАСТРОЙКА NAVBAR ---
-            hide_nav_on = ["/", "/auth", "/my_plant_details", "/analytics", "/details", "/search"]
+            # --- ВОЗВРАТ СТАРОЙ ЛОГИКИ NAVBAR ---
+            hide_nav_on = ["/", "/auth", "/my_plant_details", "/analytics", "/details", "/search", "/add_plant"]
             is_reference = page.route.startswith("/reference/")
             is_plant = page.route.startswith("/my_plant_details/")
             is_auth = page.route.startswith("/auth")
@@ -124,35 +126,16 @@ def main(page: ft.Page):
                     navigate(routes[idx])
                 v.bottom_appbar = NavBar(current_index, on_click)
             
-            # Добавляем вьюху на страницу
             page.views.append(v)
 
         except Exception as ex:
-            print(f"КРИТИЧЕСКАЯ ОШИБКА РОУТЕРА: {ex}")
-            # Распечатаем полный стек ошибки в консоль, чтобы найти причину
-            import traceback
-            traceback.print_exc()
-            
-            page.views.append(
-                ft.View(
-                    "/error",
-                    controls=[
-                        ft.Text(f"Ошибка загрузки страницы:\n{ex}", color="red", text_align="center"),
-                        ft.ElevatedButton("Вернуться назад", on_click=lambda _: navigate("/my_plants"))
-                    ]
-                )
-            )
+            print(f"ОШИБКА: {ex}")
+            page.views.append(ft.View("/error", controls=[ft.Text(f"Ошибка: {ex}")]))
         
         page.update()
 
-    # Привязываем обработчик события
     page.on_route_change = handle_route_change
-    
-    # Стартовый запуск
-    if page.route == "" or page.route == "/":
-        page.route = "/"
-    
-    handle_route_change(None)
+    page.go(page.route or "/")
 
 if __name__ == "__main__":
     ft.app(target=main, assets_dir="assets")
