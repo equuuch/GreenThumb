@@ -25,11 +25,16 @@ def main(page: ft.Page):
 
     page.title = "GreenThumb"
     page.theme_mode = ft.ThemeMode.LIGHT
-    page.bgcolor = "white" # Используем строку
+    page.bgcolor = "white"
     page.padding = 0
     
     page.window.width = 400
     page.window.height = 800
+
+    # Создаем пикер ОДИН раз и сохраняем его прямо в объект страницы
+    if not hasattr(page, "scan_picker"):
+        page.scan_picker = ft.FilePicker()
+        page.overlay.append(page.scan_picker)
 
     def navigate(route_str):
         page.route = route_str
@@ -37,8 +42,13 @@ def main(page: ft.Page):
 
     def handle_route_change(e):
         print(f"DEBUG: Маршрут -> {page.route}")
+        
         page.views.clear()
-        page.overlay.clear() 
+        
+        # Очищаем всё, КРОМЕ нашего пикера
+        for control in page.overlay[:]:
+            if control != page.scan_picker:
+                page.overlay.remove(control)
         
         nav_map = {"/user_home": 0, "/my_plants": 1, "/scanner": 2, "/profile": 3}
         current_index = nav_map.get(page.route, 0)
@@ -57,7 +67,6 @@ def main(page: ft.Page):
                 except: v = HomeView(page, navigate)
             
             elif page.route.startswith("/auth"):
-                is_reg = "?mode=register" in page.route
                 v = AuthView(page, navigate, USER_STATE, is_register_mode=("?mode=register" in page.route))
             
             elif page.route == "/user_home":
@@ -67,7 +76,8 @@ def main(page: ft.Page):
                 v = MyPlantsView(page, navigate, USER_STATE)
             
             elif page.route == "/scanner":
-                v = ScannerView(page, navigate, USER_STATE)
+                # Передаем стабильный пикер из page
+                v = ScannerView(page, navigate, USER_STATE, page.scan_picker)
             
             elif page.route == "/profile":
                 v = ProfileView(page, navigate, USER_STATE)
@@ -95,12 +105,7 @@ def main(page: ft.Page):
 
         except Exception as ex:
             print(f"ОШИБКА НАВИГАЦИИ: {ex}")
-            page.views.append(
-                ft.View(
-                    "/error",
-                    controls=[ft.Text(f"Ошибка: {ex}", color="red")]
-                )
-            )
+            page.views.append(ft.View("/error", controls=[ft.Text(f"Ошибка: {ex}", color="red")]))
         
         page.update()
 
