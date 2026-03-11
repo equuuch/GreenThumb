@@ -79,11 +79,10 @@ def main(page: ft.Page):
                 v = AuthView(page, navigate, USER_STATE, is_register_mode=is_register)
             
             # 4. Детали конкретного растения (/my_plant_details/ID)
+            # ИСПРАВЛЕНО: Убрали try-except, чтобы понять, почему не переходит
             elif page.route.startswith("/my_plant_details/"):
-                try:
-                    pid = int(page.route.split("/")[-1])
-                    v = MyPlantDetailsView(page, navigate, pid, USER_STATE)
-                except: v = MyPlantsView(page, navigate, USER_STATE)
+                pid = int(page.route.split("/")[-1])
+                v = MyPlantDetailsView(page, navigate, pid, USER_STATE)
 
             # 5. Стандартные маршруты
             elif page.route == "/user_home":
@@ -130,10 +129,17 @@ def main(page: ft.Page):
 
         except Exception as ex:
             print(f"КРИТИЧЕСКАЯ ОШИБКА РОУТЕРА: {ex}")
+            # Распечатаем полный стек ошибки в консоль, чтобы найти причину
+            import traceback
+            traceback.print_exc()
+            
             page.views.append(
                 ft.View(
                     "/error",
-                    controls=[ft.Text(f"Ошибка навигации:\n{ex}", color="red", text_align="center")]
+                    controls=[
+                        ft.Text(f"Ошибка загрузки страницы:\n{ex}", color="red", text_align="center"),
+                        ft.ElevatedButton("Вернуться назад", on_click=lambda _: navigate("/my_plants"))
+                    ]
                 )
             )
         
