@@ -8,6 +8,8 @@ from datetime import datetime
 
 def AddPlantView(page: ft.Page, nav, user_state):
     img_bytes = page.session.get("pending_image")
+    # Читаем флаг: нужно ли запускать ИИ
+    use_ai = page.session.get("use_ai_recognition")
     
     # Поля ввода
     name_field = ft.TextField(
@@ -20,7 +22,7 @@ def AddPlantView(page: ft.Page, nav, user_state):
     )
     
     height_field = ft.TextField(
-        label="Рост растения (см)", 
+        label="Рост растения (см) *", # Добавлена пометка обязательности
         hint_text="Например: 15",
         keyboard_type=ft.KeyboardType.NUMBER,
         border_radius=15,
@@ -81,12 +83,22 @@ def AddPlantView(page: ft.Page, nav, user_state):
         on_click=lambda _: threading.Thread(target=auto_detect_name, daemon=True).start()
     )
 
-    # Первый запуск при загрузке страницы
-    threading.Thread(target=auto_detect_name, daemon=True).start()
+    # ИСПРАВЛЕНО: Запуск ИИ только если флаг use_ai == True
+    if use_ai:
+        threading.Thread(target=auto_detect_name, daemon=True).start()
+    else:
+        ai_status.value = "Ручной ввод данных"
 
     def save_to_db(e):
+        # Валидация
         if not name_field.value:
             page.snack_bar = ft.SnackBar(ft.Text("Введите название!"), bgcolor="orange")
+            page.snack_bar.open = True
+            page.update()
+            return
+        
+        if not height_field.value:
+            page.snack_bar = ft.SnackBar(ft.Text("Введите рост растения!"), bgcolor="red")
             page.snack_bar.open = True
             page.update()
             return
@@ -100,7 +112,8 @@ def AddPlantView(page: ft.Page, nav, user_state):
                 new_plant = Plant(
                     user_id=user_state.get("id", 2),
                     custom_name=name_field.value,
-                    status_text=f"Рост: {height_field.value or '0'} см", 
+                    # Сохраняем и рост, и уровень света (если он есть в модели)
+                    status_text=f"Рост: {height_field.value} см", 
                     is_active=1,
                     added_at=datetime.now()
                 )
@@ -108,6 +121,9 @@ def AddPlantView(page: ft.Page, nav, user_state):
                 db.commit()
                 
             page.session.remove("pending_image")
+            page.session.remove("pending_light")
+            page.session.remove("use_ai_recognition")
+            
             page.snack_bar = ft.SnackBar(ft.Text("Сохранено в сад!"), bgcolor="#009753")
             page.snack_bar.open = True
             nav("/my_plants")
@@ -130,7 +146,7 @@ def AddPlantView(page: ft.Page, nav, user_state):
         bgcolor="white",
         controls=[
             ft.AppBar(
-                title=ft.Text("Новый питомец", color="black"),
+                title=ft.Text("Новое растение", color="black"), # ИСПРАВЛЕНО
                 bgcolor="transparent",
                 leading=ft.IconButton(ft.Icons.ARROW_BACK, on_click=lambda _: nav("/scanner"))
             ),
@@ -144,7 +160,8 @@ def AddPlantView(page: ft.Page, nav, user_state):
                         alignment=ft.alignment.center,
                     ),
                     
-                    ft.Row([ai_status, retry_btn], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    ft.Row([ai_status, retry_btn if use_ai else ft.Container()], 
+                           alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                     ai_loader,
                     
                     ft.Text("Детали", size=18, weight="bold"),

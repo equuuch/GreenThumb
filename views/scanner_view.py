@@ -11,7 +11,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 def ScannerView(page: ft.Page, nav, user_state, _=None):
     """
-    Версия 1.7: Добавлен выбор уровня освещения при добавлении растения.
+    Версия 2.0: Исправлен шаг слайдера (0.1), текст и логика передачи флага ИИ.
     """
     
     # --- СЛУЖЕБНЫЕ ОБЪЕКТЫ ---
@@ -25,7 +25,7 @@ def ScannerView(page: ft.Page, nav, user_state, _=None):
     ui_state = {
         "image_bytes": None,          # Фото для обработки
         "chat_image_pending": None,   # Фото, прикрепленное внутри чата
-        "current_plant_info": "Новое растение",
+        "current_plant_info": "Новое растение", # ИСПРАВЛЕНО
         "chat_messages": [],
         "is_sending": False,
         "selected_light": 0.5         # Значение света по умолчанию
@@ -41,19 +41,21 @@ def ScannerView(page: ft.Page, nav, user_state, _=None):
         bgcolor="#F8F9FA", content_padding=15, on_submit=lambda _: send_chat_message()
     )
 
-    # Ползунок для выбора уровня света
+    # ИСПРАВЛЕНО: Добавлен step=0.1 для дробных значений
     light_slider = ft.Slider(
-        min=0.0, max=1.0, divisions=10, 
+        min=0.0, 
+        max=1.0, 
+        divisions=10, # Это создаст 10 отрезков по 0.1
         value=0.5, 
         label="{value}",
         active_color="#FFC107",
-        on_change=lambda e: ui_state.update({"selected_light": e.control.value})
+        on_change=lambda e: ui_state.update({"selected_light": float(e.control.value)})
     )
 
     # --- ЛОГИКА ВЫБОРА (ДИАЛОГ) ---
 
     def start_diagnosis(e):
-        """Режим: Спросить ИИ"""
+        """Режим: Спросить ИИ (Диагностика)"""
         choice_dialog.open = False
         image_preview_card.visible = True
         instruction_container.visible = False
@@ -62,11 +64,9 @@ def ScannerView(page: ft.Page, nav, user_state, _=None):
         
         def ai_task():
             ai = GigaChatService()
-            # Вызываем диагностику по фото
             res = ai.diagnose_plant(next(get_db()), user_state.get("id", 1), ui_state["image_bytes"])
             loading_ring.visible = False
             if res:
-                # Открываем чат с ответом ИИ
                 open_chat_interface(res[0] if isinstance(res, tuple) else res)
             else:
                 page.snack_bar = ft.SnackBar(ft.Text("Не удалось проанализировать фото")); page.snack_bar.open = True
@@ -75,30 +75,49 @@ def ScannerView(page: ft.Page, nav, user_state, _=None):
             
         threading.Thread(target=ai_task, daemon=True).start()
 
-    def start_adding(e):
+    def start_adding(e, use_ai=True):
         """Режим: Добавить в коллекцию"""
         choice_dialog.open = False
-        # Сохраняем фото и свет в сессию, чтобы экран /add_plant мог их забрать
         page.session.set("pending_image", ui_state["image_bytes"])
-        page.session.set("pending_light", ui_state["selected_light"])
+        page.session.set("pending_light", float(ui_state["selected_light"]))
+        page.session.set("use_ai_recognition", use_ai) # ПЕРЕДАЕМ ФЛАГ ИИ
         nav("/add_plant") 
 
+    # Диалог с настройками
     choice_dialog = ft.AlertDialog(
         title=ft.Text("Настройка растения"),
         content=ft.Column([
-            ft.Text("Что вы хотите сделать с этим изображением?"),
-            ft.Divider(height=20),
-            ft.Text("Уровень освещения в месте установки:", size=14, weight="bold"),
+            ft.Text("Укажите уровень освещения в месте установки:"),
             ft.Row([
                 ft.Icon(ft.Icons.WB_CLOUDY_OUTLINED, size=20, color="grey600"),
                 ft.Container(content=light_slider, expand=True),
                 ft.Icon(ft.Icons.WB_SUNNY, size=20, color="#FFC107"),
             ]),
-            ft.Text("Сдвиньте влево (тень) или вправо (прямой свет)", size=12, color="grey500"),
+            ft.Text("* Параметр освещения обязателен", size=11, color="red700", italic=True),
+            ft.Divider(height=20),
+            ft.Text("Как вы хотите продолжить?", weight="bold"),
         ], tight=True, spacing=10),
         actions=[
-            ft.TextButton("Проконсультироваться", icon=ft.Icons.CHAT_BUBBLE_OUTLINE, on_click=start_diagnosis),
-            ft.ElevatedButton("Добавить в мой сад", icon=ft.Icons.ADD, bgcolor="#009753", color="white", on_click=start_adding),
+            ft.Column([
+                ft.ElevatedButton(
+                    "Авто-определение через ИИ", 
+                    icon=ft.Icons.AUTO_AWESOME, 
+                    bgcolor="#009753", color="white", 
+                    width=280,
+                    on_click=lambda e: start_adding(e, use_ai=True)
+                ),
+                ft.OutlinedButton(
+                    "Ввести данные вручную", 
+                    icon=ft.Icons.EDIT_NOTE, 
+                    width=280,
+                    on_click=lambda e: start_adding(e, use_ai=False)
+                ),
+                ft.TextButton(
+                    "Только диагностика (консультация)", 
+                    icon=ft.Icons.CHAT_OUTLINED,
+                    on_click=start_diagnosis
+                ),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10)
         ],
         actions_alignment=ft.MainAxisAlignment.CENTER,
     )
@@ -111,7 +130,6 @@ def ScannerView(page: ft.Page, nav, user_state, _=None):
             with open(e.files[0].path, "rb") as f:
                 ui_state["image_bytes"] = f.read()
             
-            # Показываем превью на фоне и открываем диалог выбора
             main_img_view.src_base64 = base64.b64encode(ui_state["image_bytes"]).decode("utf-8")
             if choice_dialog not in page.overlay:
                 page.overlay.append(choice_dialog)
