@@ -23,10 +23,11 @@ def ProfileView(page: ft.Page, nav, user_state):
     def handle_complete_task(e, task_id):
         db = SessionLocal()
         try:
-            # Используем твою логику из CareService (Сценарий В: Циклическое планирование)
+            # Используем логику из CareService (Сценарий: Циклическое планирование на 30 дней)
             new_task, error = CareService.complete_task(db, task_id)
             if not error:
-                page.go("/profile") # Перезагружаем для обновления списков и дат
+                # Перезагружаем для обновления списков и дат
+                page.go("/profile") 
             else:
                 print(f"Ошибка при выполнении задачи: {error}")
         finally:
@@ -39,7 +40,10 @@ def ProfileView(page: ft.Page, nav, user_state):
             if plant:
                 plant.is_active = True
                 db.commit()
-                page.go("/user_home") # Возвращаем на главную, чтобы увидеть результат
+                # Генерируем календарь для восстановленного растения
+                CareService.generate_full_schedule(db, plant_id)
+                # Возвращаем на главную, чтобы увидеть результат
+                page.go("/user_home") 
         finally:
             db.close()
 
@@ -54,11 +58,11 @@ def ProfileView(page: ft.Page, nav, user_state):
         active_plants = [p for p in all_plants if p.is_active]
         archived_plants = [p for p in all_plants if not p.is_active]
         
-        # Загружаем ближайшие задачи (Календарь)
+        # Загружаем ближайшие задачи (Превью календаря)
         active_ids = [p.plant_id for p in active_plants]
         tasks = (
             db.query(CareCalendar)
-            .options(joinedload(CareCalendar.plant)) # <--- ИСПРАВЛЕНИЕ: жадная загрузка растения
+            .options(joinedload(CareCalendar.plant)) 
             .filter(CareCalendar.plant_id.in_(active_ids), CareCalendar.is_completed == False)
             .order_by(asc(CareCalendar.scheduled_date))
             .limit(3).all()
@@ -99,14 +103,13 @@ def ProfileView(page: ft.Page, nav, user_state):
         ])
     )
 
-    # --- UI: КАЛЕНДАРЬ УХОДА ---
+    # --- UI: КАЛЕНДАРЬ УХОДА (ПРЕВЬЮ) ---
     calendar_list = ft.Column(spacing=10)
     if not tasks:
         calendar_list.controls.append(ft.Text("На сегодня задач нет ✨", size=13, color="grey", italic=True))
     else:
         for t in tasks:
             is_today = t.scheduled_date <= date.today()
-            # Теперь t.plant.custom_name не вызывает ошибку сессии
             plant_name = t.plant.custom_name if t.plant else "Растение"
             
             calendar_list.controls.append(
@@ -117,7 +120,7 @@ def ProfileView(page: ft.Page, nav, user_state):
                         ft.Icon(ft.Icons.WATER_DROP, color="#009753" if is_today else "grey700", size=20),
                         ft.Column([
                             ft.Text(plant_name, weight="bold", size=14, color="black"),
-                            ft.Text("Нужно полить" if is_today else f"Полив {t.scheduled_date}", size=12, color="grey700")
+                            ft.Text("Нужно полить" if is_today else f"Полив {t.scheduled_date.strftime('%d.%m')}", size=12, color="grey700")
                         ], expand=True, spacing=0),
                         ft.IconButton(
                             icon=ft.Icons.CHECK_CIRCLE_OUTLINE, 
@@ -181,7 +184,10 @@ def ProfileView(page: ft.Page, nav, user_state):
             ft.Container(
                 padding=20,
                 content=ft.Column([
-                    ft.Text("Календарь ухода", size=18, weight="bold", color="black"),
+                    ft.Row([
+                        ft.Text("Календарь ухода", size=18, weight="bold", color="black"),
+                        ft.TextButton("См. всё", on_click=lambda _: nav("/calendar"))
+                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                     calendar_list,
                     ft.Container(height=10),
                     tabs,

@@ -15,6 +15,8 @@ from views.analytics_view import AnalyticsView
 from views.my_plant_details_view import MyPlantDetailsView
 from views.details_view import DetailsView
 from views.search_view import SearchView
+# НОВЫЙ ИМПОРТ:
+from views.calendar_view import CalendarView
 
 # Импорт вьюхи добавления растения
 try:
@@ -118,6 +120,10 @@ def main(page: ft.Page):
             
             elif page.route == "/profile":
                 v = ProfileView(page, navigate, USER_STATE)
+
+            # --- ДОБАВЛЕННЫЙ РОУТ ДЛЯ КАЛЕНДАРЯ ---
+            elif page.route == "/calendar":
+                v = CalendarView(page, navigate, USER_STATE)
             
             elif page.route == "/analytics":
                 v = AnalyticsView(page, navigate) 
@@ -132,7 +138,9 @@ def main(page: ft.Page):
                 v = HomeView(page, navigate)
 
             # --- ЛОГИКА NAVBAR ---
-            hide_nav_on = ["/", "/auth", "/my_plant_details", "/analytics", "/details", "/search", "/add_plant"]
+            # Добавляем /calendar в список, где навигация может быть скрыта или показана
+            # Обычно в календаре навбар нужен, чтобы вернуться в профиль
+            hide_nav_on = ["/", "/auth", "/analytics", "/details", "/search", "/add_plant"]
             is_reference = page.route.startswith("/reference/")
             is_plant = page.route.startswith("/my_plant_details/")
             is_auth = page.route.startswith("/auth")
@@ -151,14 +159,13 @@ def main(page: ft.Page):
         
         page.update()
 
-    # --- ИСПРАВЛЕННЫЙ ОБРАБОТЧИК КНОПКИ НАЗАД ---
+    # --- ОБРАБОТЧИК КНОПКИ НАЗАД ---
     def handle_view_pop(e):
         if len(page.views) > 1:
             page.views.pop()
             top_view = page.views[-1]
             page.go(top_view.route)
         else:
-            # Если в стеке одна вьюха, просто идем на главную
             page.go("/")
 
     page.on_route_change = handle_route_change
