@@ -198,8 +198,9 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
         ])
 
     # --- ВЕРСТКА ---
+    # ФИКС ДЛЯ БРАУЗЕРА: убираем префикс assets/, так как он подставляется автоматически через assets_dir в ft.app
     clean_img_path = p_image_url.replace("\\", "/") if p_image_url else None
-    img_src = f"assets/{clean_img_path}" if clean_img_path else "https://images.unsplash.com/photo-1453904300235-0f2f60b15b5d?w=300"
+    img_src = clean_img_path if clean_img_path else "https://images.unsplash.com/photo-1453904300235-0f2f60b15b5d?w=300"
 
     header = ft.Stack([
         ft.Image(src=img_src, fit=ft.ImageFit.COVER, width=400, height=400),

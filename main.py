@@ -34,6 +34,7 @@ except ImportError:
 USER_STATE = {"id": 1, "name": "Пользователь"}
 
 def main(page: ft.Page):
+    # Инициализация БД при запуске
     init_db()
 
     page.title = "GreenThumb"
@@ -41,6 +42,7 @@ def main(page: ft.Page):
     page.bgcolor = "white"
     page.padding = 0
     
+    # Плавные переходы между экранами
     page.theme = ft.Theme(
         page_transitions=ft.PageTransitionsTheme(
             android="fadeThrough",
@@ -49,9 +51,11 @@ def main(page: ft.Page):
         )
     )
 
+    # Размеры для отладки (имитация мобильного экрана)
     page.window.width = 400
     page.window.height = 800
 
+    # Глобальный пикер для работы с файлами (сканер/фото)
     if not hasattr(page, "scan_picker"):
         page.scan_picker = ft.FilePicker()
         page.overlay.append(page.scan_picker)
@@ -61,16 +65,16 @@ def main(page: ft.Page):
 
     # --- ГЛАВНЫЙ ОБРАБОТЧИК МАРШРУТОВ ---
     def handle_route_change(e):
-        print(f"DEBUG: Маршрут изменен на: {page.route}")
+        print(f"DEBUG: Переход на: {page.route}")
         
-        # КРИТИЧЕСКИЙ ФИКС: Очищаем глобальные бары страницы при каждой смене роута
+        # Очищаем бары, чтобы они не «прилипали» к новым экранам
         page.navigation_bar = None
         page.bottom_app_bar = None
         
         v = None
         
         try:
-            # 1. Логика динамических маршрутов
+            # 1. Логика динамических маршрутов (с ID или параметрами)
             if page.route.startswith("/reference/"):
                 catalog_id = int(page.route.split("/")[-1])
                 v = ReferenceView(page, navigate, catalog_id, USER_STATE)
@@ -135,27 +139,27 @@ def main(page: ft.Page):
 
         if v is None: return
 
-        # --- УПРАВЛЕНИЕ СТЕКОМ ---
+        # --- УПРАВЛЕНИЕ СТЕКОМ СТРАНИЦ ---
+        # Если переходим на корневой экран, чистим историю, чтобы не лагало
         root_routes = ["/", "/user_home", "/catalog", "/my_plants", "/profile"]
         if page.route in root_routes:
             page.views.clear()
         
+        # Защита от дублирования одной и той же вьюхи в стеке
         if len(page.views) > 0 and page.views[-1].route == page.route:
             return
 
-        # --- ЛОГИКА НАВБАРА ---
+        # --- ЛОГИКА ОТОБРАЖЕНИЯ НАВБАРА ---
         hide_nav_on = ["/", "/auth", "/analytics", "/details", "/search", "/add_plant"]
         
         is_details = (
             page.route.startswith("/reference/") or 
             page.route.startswith("/reference_detail/") or 
-            page.route.startswith("/my_plant_details/") or
-            page.route.startswith("/auth") # Доп. проверка для безопасности
+            page.route.startswith("/my_plant_details/")
         )
 
         if page.route in hide_nav_on or is_details or not NavBar:
             v.bottom_appbar = None
-            # Дублируем очистку глобально
             page.bottom_app_bar = None 
         else:
             nav_map = {"/user_home": 0, "/my_plants": 1, "/scanner": 2, "/profile": 3}
@@ -163,12 +167,12 @@ def main(page: ft.Page):
             
             def on_nav_click(idx):
                 routes = ["/user_home", "/my_plants", "/scanner", "/profile"]
-                page.go(routes[idx])
+                if page.route != routes[idx]:
+                    page.go(routes[idx])
             
-            # Назначаем бар именно вьюхе
             v.bottom_appbar = NavBar(current_index, on_nav_click)
         
-        # --- ДОБАВЛЕНИЕ И ОБНОВЛЕНИЕ ---
+        # Добавляем вьюху в стек и обновляем страницу
         page.views.append(v)
         page.update()
 
@@ -184,7 +188,9 @@ def main(page: ft.Page):
     page.on_route_change = handle_route_change
     page.on_view_pop = handle_view_pop
     
+    # Запуск с текущего роута или главной
     page.go(page.route or "/")
 
 if __name__ == "__main__":
+    # assets_dir="assets" — КРИТИЧНО для отображения картинок в браузере
     ft.app(target=main, assets_dir="assets")
