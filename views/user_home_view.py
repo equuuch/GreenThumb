@@ -3,7 +3,7 @@ from database.session import get_db
 from services.plant_services import PlantService
 from services.care_service import CareService
 from datetime import date
-from database.models import CareCalendar, Plant, PlantCatalog
+from database.models import CareCalendar, Plant
 from sqlalchemy import select
 
 def UserHomeView(page: ft.Page, nav, user_state):
@@ -12,15 +12,14 @@ def UserHomeView(page: ft.Page, nav, user_state):
     view.bgcolor = "#F9F9F9"
     view.padding = 20
 
-    user_name = user_state.get("name", "Садовод")
     user_id = user_state.get("id")
+    user_name = user_state.get("name", "Садовод")
 
-    # 1. ЗАГРУЗКА ДАННЫХ ИЗ БАЗЫ
+    # 1. ЗАГРУЗКА ДАННЫХ
     with next(get_db()) as db:
         my_plants = PlantService.get_user_plants(db, user_id)
         today_tasks = CareService.get_today_tasks(db, user_id)
         
-        # Проверка на наличие просроченных задач
         has_alerts = db.scalar(
             select(CareCalendar)
             .join(Plant)
@@ -32,8 +31,6 @@ def UserHomeView(page: ft.Page, nav, user_state):
         ) is not None
 
     # --- ШАПКА ---
-    
-    # Иконка уведомлений
     notification_icon = ft.Stack([
         ft.IconButton(
             icon=ft.Icons.NOTIFICATIONS_OUTLINED,
@@ -49,12 +46,10 @@ def UserHomeView(page: ft.Page, nav, user_state):
         )
     ])
 
-    # КНОПКА СПРАВОЧНИКА
     catalog_button = ft.IconButton(
         icon=ft.Icons.MENU_BOOK_OUTLINED,
         icon_color="black",
-        tooltip="Справочник растений",
-        on_click=lambda _: nav("/catalog") # Маршрут для просмотра PlantCatalog
+        on_click=lambda _: nav("/catalog")
     )
 
     header = ft.Row(
@@ -64,16 +59,13 @@ def UserHomeView(page: ft.Page, nav, user_state):
                 ft.Text(f"Здравствуйте, {user_name}!", size=12, color="#6E6E6E"),
                 ft.Text("Ваш сад", size=26, weight="bold", color="black"),
             ], spacing=2),
-            # Группируем кнопки справочника и уведомлений
-            ft.Row([
-                catalog_button,
-                notification_icon
-            ], spacing=0)
+            ft.Row([catalog_button, notification_icon], spacing=0)
         ]
     )
 
-    # --- ПРЕВЬЮ РАСТЕНИЙ (Grid) ---
+    # --- СЕТКА РАСТЕНИЙ (Лимит 4 карточки) ---
     grid = ft.ResponsiveRow(spacing=15)
+    
     if not my_plants:
         grid.controls.append(
             ft.Container(
@@ -82,24 +74,48 @@ def UserHomeView(page: ft.Page, nav, user_state):
             )
         )
     else:
-        for p in my_plants[:2]:
-            img_path = f"uploads/{p.image_url}" if p.image_url else "/aloe.png"
+        # Берем только первые 4 растения
+        for p in my_plants[:4]:
+            # Обработка пути из базы (убираем лишние слэши и добавляем один в начало)
+            raw_path = p.image_url if p.image_url else "plants/default.png"
+            img_path = f"/{raw_path.lstrip('/')}"
+
             grid.controls.append(
                 ft.Container(
-                    bgcolor="white", padding=10, border_radius=20, col={"xs": 6, "sm": 6},
+                    bgcolor="white", 
+                    padding=10, 
+                    border_radius=20, 
+                    col={"xs": 6, "sm": 6},
                     shadow=ft.BoxShadow(blur_radius=10, color="black12"),
-                    on_click=lambda _: nav(f"/my_plant_details/{p.plant_id}"),
+                    on_click=lambda e, plant_id=p.plant_id: nav(f"/my_plant_details/{plant_id}"),
                     content=ft.Column([
-                        ft.Image(src=img_path, width=150, height=110, fit="cover", border_radius=15),
-                        ft.Text(p.custom_name, weight="bold", size=14, color="black", max_lines=1),
-                    ])
+                        ft.Image(
+                            src=img_path, 
+                            width=200, 
+                            height=120, 
+                            fit="cover", 
+                            border_radius=15,
+                            error_content=ft.Icon(ft.Icons.IMAGE_NOT_SUPPORTED_OUTLINED, color="grey")
+                        ),
+                        ft.Container(
+                            padding=ft.padding.only(left=5, top=5, right=5),
+                            content=ft.Text(
+                                p.custom_name, 
+                                weight="bold", 
+                                size=14, 
+                                color="black", 
+                                max_lines=1, 
+                                overflow=ft.TextOverflow.ELLIPSIS
+                            )
+                        ),
+                    ], spacing=0)
                 )
             )
 
     # --- СПИСОК ЗАДАЧ ---
     task_list = ft.Column(spacing=12)
     if not today_tasks:
-        task_list.controls.append(ft.Text("На сегодня задач нет! Отдыхайте ✨", color="gray", size=14))
+        task_list.controls.append(ft.Text("На сегодня задач нет! ✨", color="gray", size=14))
     else:
         for task in today_tasks:
             task_list.controls.append(
@@ -123,7 +139,6 @@ def UserHomeView(page: ft.Page, nav, user_state):
         ])
     )
 
-    # Сборка экрана
     lv = ft.ListView(expand=True, spacing=25)
     lv.controls.extend([header, grid, tasks_container])
 
