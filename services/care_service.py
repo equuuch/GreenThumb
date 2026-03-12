@@ -20,7 +20,8 @@ class CareService:
                 and_(
                     Plant.user_id == user_id,
                     CareCalendar.is_completed == False,
-                    CareCalendar.scheduled_date <= today
+                    CareCalendar.scheduled_date <= today,
+                    Plant.is_active == True
                 )
             )
             .order_by(CareCalendar.scheduled_date)
