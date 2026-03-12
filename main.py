@@ -19,24 +19,21 @@ from views.calendar_view import CalendarView
 from views.notifications_view import NotificationsView
 from views.catalog_view import CatalogView 
 
-# Импорт вьюхи добавления (проверь, чтобы имя файла было add_plant_view.py)
 try:
     from views.add_plant_view import AddPlantView
 except ImportError as e:
     print(f"ОШИБКА ИМПОРТА AddPlantView: {e}")
     AddPlantView = None
 
-# Импорт NavBar
 try:
     from components.nav_bar import NavBar
 except ImportError:
     NavBar = None
 
-# Глобальный стейт приложения (id=1 для тестов, если бд уже есть)
+# Глобальный стейт приложения
 USER_STATE = {"id": 1, "name": "Пользователь"}
 
 def main(page: ft.Page):
-    # 1. Инициализация БД
     init_db()
 
     page.title = "GreenThumb"
@@ -44,7 +41,6 @@ def main(page: ft.Page):
     page.bgcolor = "white"
     page.padding = 0
     
-    # Плавные переходы
     page.theme = ft.Theme(
         page_transitions=ft.PageTransitionsTheme(
             android="fadeThrough",
@@ -53,11 +49,9 @@ def main(page: ft.Page):
         )
     )
 
-    # Установка размеров окна (мобильный формат)
     page.window.width = 400
     page.window.height = 800
 
-    # Глобальный FilePicker для сканера
     if not hasattr(page, "scan_picker"):
         page.scan_picker = ft.FilePicker()
         page.overlay.append(page.scan_picker)
@@ -69,10 +63,14 @@ def main(page: ft.Page):
     def handle_route_change(e):
         print(f"DEBUG: Маршрут изменен на: {page.route}")
         
+        # КРИТИЧЕСКИЙ ФИКС: Очищаем глобальные бары страницы при каждой смене роута
+        page.navigation_bar = None
+        page.bottom_app_bar = None
+        
         v = None
         
         try:
-            # 1. Логика динамических маршрутов (с ID)
+            # 1. Логика динамических маршрутов
             if page.route.startswith("/reference/"):
                 catalog_id = int(page.route.split("/")[-1])
                 v = ReferenceView(page, navigate, catalog_id, USER_STATE)
@@ -107,7 +105,6 @@ def main(page: ft.Page):
                 if AddPlantView:
                     v = AddPlantView(page, navigate, USER_STATE)
                 else:
-                    print("Ошибка: AddPlantView не загружен")
                     page.go("/scanner")
                     return
             
@@ -133,46 +130,48 @@ def main(page: ft.Page):
                 v = HomeView(page, navigate)
 
         except Exception as route_ex:
-            print(f"Критическая ошибка роутинга {page.route}: {route_ex}")
-            # Откат на домашнюю при ошибке
+            print(f"Критическая ошибка роутинга: {route_ex}")
             v = UserHomeView(page, navigate, USER_STATE)
 
-        if v is None:
-            print(f"ВНИМАНИЕ: Для роута {page.route} не найдена вьюха!")
-            return
+        if v is None: return
 
-        # 2. Управление стеком (очистка при переходе на главные экраны)
+        # --- УПРАВЛЕНИЕ СТЕКОМ ---
         root_routes = ["/", "/user_home", "/catalog", "/my_plants", "/profile"]
         if page.route in root_routes:
             page.views.clear()
         
-        # Предотвращение дублирования в стеке
         if len(page.views) > 0 and page.views[-1].route == page.route:
             return
 
-        # 3. Привязка NavBar
-        hide_nav_on = ["/", "/auth", "/analytics", "/details", "/search", "/add_plant", "/catalog"]
+        # --- ЛОГИКА НАВБАРА ---
+        hide_nav_on = ["/", "/auth", "/analytics", "/details", "/search", "/add_plant"]
+        
         is_details = (
             page.route.startswith("/reference/") or 
             page.route.startswith("/reference_detail/") or 
-            page.route.startswith("/my_plant_details/")
+            page.route.startswith("/my_plant_details/") or
+            page.route.startswith("/auth") # Доп. проверка для безопасности
         )
-        
-        if page.route not in hide_nav_on and not is_details and NavBar:
+
+        if page.route in hide_nav_on or is_details or not NavBar:
+            v.bottom_appbar = None
+            # Дублируем очистку глобально
+            page.bottom_app_bar = None 
+        else:
             nav_map = {"/user_home": 0, "/my_plants": 1, "/scanner": 2, "/profile": 3}
             current_index = nav_map.get(page.route, 0)
             
             def on_nav_click(idx):
                 routes = ["/user_home", "/my_plants", "/scanner", "/profile"]
                 page.go(routes[idx])
-                
+            
+            # Назначаем бар именно вьюхе
             v.bottom_appbar = NavBar(current_index, on_nav_click)
         
-        # 4. Добавление и отрисовка
+        # --- ДОБАВЛЕНИЕ И ОБНОВЛЕНИЕ ---
         page.views.append(v)
         page.update()
 
-    # --- Обработчик кнопки "Назад" ---
     def handle_view_pop(e):
         if len(page.views) > 1:
             page.views.pop()
@@ -185,9 +184,7 @@ def main(page: ft.Page):
     page.on_route_change = handle_route_change
     page.on_view_pop = handle_view_pop
     
-    # Запуск
     page.go(page.route or "/")
 
 if __name__ == "__main__":
-    # Убедись, что папка assets существует, иначе удали assets_dir
     ft.app(target=main, assets_dir="assets")

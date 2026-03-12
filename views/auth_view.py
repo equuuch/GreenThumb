@@ -1,69 +1,61 @@
 import flet as ft
+import time
 from database.session import get_db
 from services.auth_service import AuthService
 
-# Аргумент is_register_mode определяет, какую форму показать первой
 def AuthView(page: ft.Page, nav, user_state, is_register_mode=False):
+    # --- САМЫЙ ЖЕСТКИЙ И РАБОЧИЙ СПОСОБ ---
+    # Сохраняем навбар в переменную, если он есть, и удаляем его с текущей страницы
+    saved_navbar = None
+    if page.navigation_bar:
+        saved_navbar = page.navigation_bar
+        page.navigation_bar = None # Полностью удаляем из структуры
+        page.update()
+
     view = ft.View()
     view.route = "/auth"
-    view.bgcolor = "white" # Заменили ft.colors.WHITE
+    view.bgcolor = "white"
     view.padding = 0
     view.scroll = ft.ScrollMode.AUTO 
 
-    # Состояние экрана
     ui_state = {"is_login": not is_register_mode}
 
-    def show_msg(text, color="red"):
-        # В новых версиях Flet SnackBar лучше добавлять в overlay
-        snack = ft.SnackBar(
-            content=ft.Text(text, color="white"),
-            bgcolor=color
-        )
+    def show_msg(text, color="#FF5252"):
+        snack = ft.SnackBar(content=ft.Text(text, color="white"), bgcolor=color)
         page.overlay.append(snack)
         snack.open = True
         page.update()
 
+    # Вспомогательная функция для возврата навбара перед уходом
+    def restore_navbar_and_nav(route):
+        if saved_navbar:
+            page.navigation_bar = saved_navbar
+            page.navigation_bar.visible = True
+        nav(route)
+
     # --- ПОЛЯ ВВОДА ---
     name_input = ft.TextField(
-        label="Имя", 
-        visible=not ui_state["is_login"], 
-        border_radius=15, 
-        bgcolor="#F9F9F9",
-        border_color="#E0E0E0", 
-        focused_border_color="#009753",
-        color="black" # Заменили ft.colors.BLACK
+        label="Имя", visible=not ui_state["is_login"], 
+        border_radius=15, bgcolor="#F9F9F9", border_color="#E0E0E0", 
+        focused_border_color="#009753", color="black",
+        prefix_icon=ft.Icons.PERSON_OUTLINE
     )
     email_input = ft.TextField(
-        label="Почта", 
-        border_radius=15, 
-        bgcolor="#F9F9F9",
-        border_color="#E0E0E0", 
-        focused_border_color="#009753",
-        color="black", 
-        value="test@mail.ru"
+        label="Почта", border_radius=15, bgcolor="#F9F9F9",
+        border_color="#E0E0E0", focused_border_color="#009753",
+        color="black", value="test@mail.ru", prefix_icon=ft.Icons.EMAIL_OUTLINED
     )
     password_input = ft.TextField(
-        label="Пароль", 
-        password=True, 
-        can_reveal_password=True,
-        border_radius=15, 
-        bgcolor="#F9F9F9", 
-        border_color="#E0E0E0",
-        focused_border_color="#009753", 
-        color="black", 
-        value="123"
+        label="Пароль", password=True, can_reveal_password=True,
+        border_radius=15, bgcolor="#F9F9F9", border_color="#E0E0E0",
+        focused_border_color="#009753", color="black", value="123",
+        prefix_icon=ft.Icons.LOCK_OUTLINE
     )
 
-    # --- ТЕКСТОВЫЕ ЭЛЕМЕНТЫ ---
-    initial_title = "Авторизация" if ui_state["is_login"] else "Регистрация"
-    initial_btn = "Войти" if ui_state["is_login"] else "Создать аккаунт"
-    initial_hint = "Нет аккаунта?" if ui_state["is_login"] else "Уже есть аккаунт?"
-    initial_link = "Зарегистрируйтесь" if ui_state["is_login"] else "Войдите в систему"
-
-    title_txt = ft.Text(value=initial_title, size=28, weight="bold", color="black")
-    submit_btn_txt = ft.Text(value=initial_btn, color="white", weight="bold", size=16)
-    toggle_hint = ft.Text(initial_hint, color="black")
-    toggle_link = ft.Text(initial_link, color="#009753", weight="bold")
+    title_txt = ft.Text(value="Авторизация" if ui_state["is_login"] else "Регистрация", size=32, weight="bold", color="black")
+    submit_btn_txt = ft.Text(value="Войти" if ui_state["is_login"] else "Создать аккаунт", color="white", weight="bold", size=16)
+    toggle_hint = ft.Text("Нет аккаунта?" if ui_state["is_login"] else "Уже есть аккаунт?", color="black")
+    toggle_link = ft.Text("Зарегистрируйтесь" if ui_state["is_login"] else "Войдите в систему", color="#009753", weight="bold")
 
     def toggle_mode(e):
         ui_state["is_login"] = not ui_state["is_login"]
@@ -75,6 +67,8 @@ def AuthView(page: ft.Page, nav, user_state, is_register_mode=False):
         view.update()
 
     def handle_auth(e):
+        login_btn.disabled = True
+        page.update()
         with next(get_db()) as db:
             try:
                 if ui_state["is_login"]:
@@ -82,57 +76,50 @@ def AuthView(page: ft.Page, nav, user_state, is_register_mode=False):
                     if user:
                         user_state["id"] = user.user_id
                         user_state["name"] = user.first_name
-                        nav("/user_home")
+                        restore_navbar_and_nav("/user_home") # Возвращаем навбар и идем домой
                     else:
-                        show_msg("Неверная почта или пароль")
+                        show_msg("Ошибка входа")
                 else:
                     user = AuthService.register(db, email_input.value, password_input.value, name_input.value)
                     if user:
                         user_state["id"] = user.user_id
                         user_state["name"] = user.first_name
-                        nav("/user_home")
+                        restore_navbar_and_nav("/user_home")
                     else:
                         show_msg("Ошибка регистрации")
             except Exception as ex:
                 show_msg(f"Ошибка: {ex}")
+            finally:
+                login_btn.disabled = False
+                page.update()
 
-    # Кнопка входа (исправленная версия)
     login_btn = ft.Container(
-        content=submit_btn_txt, # Текст кнопки
-        alignment=ft.alignment.center, # Центрируем текст внутри
-        bgcolor="#009753", 
-        padding=15, 
-        border_radius=20,
-        on_click=handle_auth, 
-        width=float("inf")
+        content=submit_btn_txt, alignment=ft.alignment.center, 
+        bgcolor="#009753", padding=15, border_radius=18,
+        on_click=handle_auth, width=float("inf")
     )
     
-    # Формируем список контролов
     view.controls.append(
         ft.Container(
-            content=ft.IconButton(ft.Icons.ARROW_BACK_IOS_NEW, icon_color="black", on_click=lambda _: nav("/")),
+            content=ft.IconButton(ft.Icons.ARROW_BACK_IOS_NEW, icon_color="black", on_click=lambda _: restore_navbar_and_nav("/")),
             padding=ft.padding.only(top=20, left=10)
         )
     )
     
     view.controls.append(
         ft.Container(
-            padding=30,
+            padding=ft.padding.all(35),
             content=ft.Column([
-                title_txt, 
-                name_input, 
-                email_input, 
-                password_input,
-                ft.Container(height=10), 
-                login_btn,
+                ft.Column([title_txt, ft.Text("Добро пожаловать в GreenThumb", color="grey600", size=14)], spacing=5),
+                ft.Container(height=20),
+                name_input, email_input, password_input,
+                ft.Container(height=15), login_btn,
+                ft.Container(height=10),
                 ft.GestureDetector(
-                    content=ft.Row(
-                        [toggle_hint, toggle_link], 
-                        alignment=ft.MainAxisAlignment.CENTER
-                    ),
+                    content=ft.Row([toggle_hint, toggle_link], alignment=ft.MainAxisAlignment.CENTER),
                     on_tap=toggle_mode
                 )
-            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+            ], horizontal_alignment=ft.CrossAxisAlignment.START, spacing=15)
         )
     )
     

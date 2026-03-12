@@ -17,7 +17,6 @@ def NavBar(selected_index: int, on_change_callback):
         target_color = active_color if is_active else inactive_color
         target_icon = icon_selected if is_active else icon_unselected
         
-        # ИСПРАВЛЕНИЕ: Передаем иконку позиционным аргументом
         icon_obj = ft.Icon(target_icon, color=target_color, size=26)
         
         tab_content = ft.Column(
@@ -48,11 +47,13 @@ def NavBar(selected_index: int, on_change_callback):
         alignment=ft.MainAxisAlignment.SPACE_BETWEEN
     )
 
+    # ВОЗВРАЩАЕМ BottomAppBar
     return ft.BottomAppBar(
         content=ft.Container(
             content=nav_row,
-            padding=ft.padding.only(top=10, bottom=5)
+            padding=ft.padding.only(top=10, bottom=10, left=10, right=10),
+            bgcolor="#E8E8E8", # Цвет фона здесь
         ),
-        bgcolor="#E8E8E8",
-        padding=0
+        bgcolor="#E8E8E8", # И здесь для надежности
+        height=80,
     )
