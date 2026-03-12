@@ -29,7 +29,7 @@ def seed_data():
         {
             "species_name": "Алоэ Вера",
             "latin_name": "Aloe barbadensis miller",
-            "description": "Суккулент с целебными свойствами.",
+            "description": "Популярный суккулент с мясистыми колючими листьями ценится за свои уникальные лечебные свойства. Растение эффективно очищает воздух в помещении и требует минимального внимания со стороны владельца. Оно отлично переносит засуху, но совершенно не терпит избыточного полива и застоя влаги у корней.",
             "default_watering_interval": 14,
             "default_light_level": 0.8,
             "aliases": ["алоэ", "столетник", "алое"]
@@ -37,7 +37,7 @@ def seed_data():
         {
             "species_name": "Петрушка",
             "latin_name": "Petroselinum crispum",
-            "description": "Пряное растение. Любит воду.",
+            "description": "Неприхотливая пряная трава является незаменимым источником витаминов и ярким украшением домашнего подоконника. Культура крайне нуждается в регулярном увлажнении почвы и хорошем освещении для быстрого роста зелени. Молодые листья можно употреблять в пищу уже через несколько недель после появления первых всходов.",
             "default_watering_interval": 3,
             "default_light_level": 0.7,
             "aliases": ["петрушка кудрявая", "зелень"]
@@ -45,7 +45,7 @@ def seed_data():
         {
             "species_name": "Роза",
             "latin_name": "Rosa chinensis",
-            "description": "Миниатюрная комнатная роза.",
+            "description": "Элегантная миниатюрная роза была специально выведена для успешного выращивания в условиях обычных городских квартир. Это растение требует строгого соблюдения режима полива и очень чувствительно к уровню влажности воздуха. Для обильного и продолжительного цветения ей необходимо обеспечить яркий рассеянный солнечный свет.",
             "default_watering_interval": 5,
             "default_light_level": 0.9,
             "aliases": ["роза комнатная"]
@@ -53,7 +53,7 @@ def seed_data():
         {
             "species_name": "Гибискус",
             "latin_name": "Hibiscus rosa-sinensis",
-            "description": "Китайская роза. Любит тепло и свет.",
+            "description": "Красивое вечнозеленое дерево более известно среди цветоводов под поэтичным названием китайская роза. Крупные яркие бутоны живут всего один день, но при правильном уходе новые цветы появляются постоянно. Растение очень любит теплое пространство и активно развивается в просторных горшках с хорошим дренажем.",
             "default_watering_interval": 4,
             "default_light_level": 0.8,
             "aliases": ["китайская роза", "гибискус"]
@@ -83,7 +83,7 @@ def seed_data():
     db.commit()
     print("✅ Каталог и Алиасы наполнены")
 
-    # 3. Добавляем растения пользователю с чистыми названиями
+    # 3. Добавляем растения пользователю
     cats = {c.species_name: c.catalog_id for c in db.query(PlantCatalog).all()}
     
     if db.query(Plant).filter_by(user_id=user.user_id).count() == 0:
@@ -95,7 +95,7 @@ def seed_data():
                 image_url="plants/aloe.png",
                 last_watered_at=datetime.now() - timedelta(days=2),
                 user_light_level=0.9,  
-                status_text="Отличное состояние.",
+                status_text="Рост: 15.0 см",
                 is_active=True
             ),
             Plant(
@@ -105,7 +105,7 @@ def seed_data():
                 image_url="plants/petrushka.png",
                 last_watered_at=datetime.now(),
                 user_light_level=0.4,  
-                status_text="Растет стабильно.",
+                status_text="Рост: 10.5 см",
                 is_active=True
             ),
             Plant(
@@ -115,13 +115,23 @@ def seed_data():
                 image_url="plants/rose.png",
                 last_watered_at=datetime.now() - timedelta(days=1),
                 user_light_level=0.1,  
-                status_text="Требуется больше света.",
+                status_text="Рост: 77.0 см",
+                is_active=True
+            ),
+            Plant(
+                user_id=user.user_id,
+                catalog_id=cats.get("Гибискус"),
+                custom_name="Гибискус",
+                image_url="plants/gib.png",
+                last_watered_at=datetime.now() - timedelta(days=3),
+                user_light_level=0.7,  
+                status_text="Рост: 45.0 см",
                 is_active=True
             )
         ]
         db.add_all(my_plants)
         db.commit()
-        print(f"✅ В сад добавлено {len(my_plants)} растений с обновленными названиями")
+        print(f"✅ В сад добавлено {len(my_plants)} растений с данными о росте")
 
     db.close()
 
