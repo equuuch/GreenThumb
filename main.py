@@ -1,9 +1,8 @@
 import flet as ft
 from database.session import init_db
 from urllib.parse import unquote
-import time
 
-# Импорты вьюх
+# --- ИМПОРТЫ ВЬЮХ ---
 from views.home_view import HomeView
 from views.user_home_view import UserHomeView
 from views.my_plants_view import MyPlantsView
@@ -11,13 +10,13 @@ from views.auth_view import AuthView
 from views.scanner_view import ScannerView
 from views.profile_view import ProfileView
 from views.reference_view import ReferenceView
+from views.reference_detail_view import ReferenceDetailView  # Новая вьюха без картинок
 from views.analytics_view import AnalyticsView
 from views.my_plant_details_view import MyPlantDetailsView
 from views.details_view import DetailsView
 from views.search_view import SearchView
-from views.calendar_view import CalendarView
+from views.calendar_view import CalendarView 
 from views.notifications_view import NotificationsView
-# Добавлена вьюшка каталога
 from views.catalog_view import CatalogView 
 
 # Импорт вьюхи добавления растения
@@ -25,7 +24,6 @@ try:
     from views.add_plant_view import AddPlantView
 except ImportError:
     AddPlantView = None
-    print("ВНИМАНИЕ: Файл views/add_plant_view.py не найден!")
 
 # Попытка импорта NavBar
 try:
@@ -45,7 +43,13 @@ def main(page: ft.Page):
     page.bgcolor = "white"
     page.padding = 0
     
+    # Регистрация шрифта Manrope
+    page.fonts = {
+        "Manrope": "https://github.com/google/fonts/raw/main/ofl/manrope/Manrope%5Bwght%5D.ttf"
+    }
+
     page.theme = ft.Theme(
+        font_family="Manrope",
         page_transitions=ft.PageTransitionsTheme(
             android="fadeThrough",
             ios="cupertino",
@@ -54,7 +58,7 @@ def main(page: ft.Page):
         )
     )
 
-    # Мобильные размеры окна
+    # Установка размеров окна
     page.window.width = 400
     page.window.height = 800
 
@@ -62,118 +66,128 @@ def main(page: ft.Page):
         page.scan_picker = ft.FilePicker()
         page.overlay.append(page.scan_picker)
 
-    # --- ФУНКЦИЯ НАВИГАЦИИ ---
+    # Вспомогательная функция навигации
     def navigate(route_str):
-        page.route = route_str
         page.go(route_str)
-        page.update()
 
     # --- ГЛАВНЫЙ ОБРАБОТЧИК МАРШРУТОВ ---
     def handle_route_change(e):
-        print(f"DEBUG: Текущий маршрут: {page.route}")
+        print(f"DEBUG: Маршрут изменен на: {page.route}")
         
-        # Полная очистка стека перед созданием новой вьюхи
-        page.views.clear()
+        v = None
         
-        # Карта индексов для NavBar
-        nav_map = {"/user_home": 0, "/my_plants": 1, "/scanner": 2, "/profile": 3}
-        current_index = nav_map.get(page.route, 0)
+        # 1. Логика выбора вьюхи
+        # --- ДИНАМИЧЕСКИЕ РОУТЫ ---
+        
+        # С картинкой (для главной)
+        if page.route.startswith("/reference/"):
+            try:
+                catalog_id = int(page.route.split("/")[-1])
+                v = ReferenceView(page, navigate, catalog_id, USER_STATE)
+            except Exception as ex:
+                print(f"Ошибка ReferenceView: {ex}")
+                page.go("/catalog")
+                return
 
-        try:
-            # 2. Динамические маршруты
-            if page.route.startswith("/reference/"):
-                try:
-                    catalog_id = int(page.route.split("/")[-1])
-                    v = ReferenceView(page, navigate, catalog_id, USER_STATE)
-                except Exception as ex_ref: 
-                    print(f"ОШИБКА В РОУТЕ REFERENCE: {ex_ref}")
-                    v = HomeView(page, navigate)
-            
-            elif page.route.startswith("/search"):
-                try:
-                    query = unquote(page.route.split("q=")[-1])
-                    v = SearchView(page, navigate, query, USER_STATE)
-                except: 
-                    v = HomeView(page, navigate)
+        # БЕЗ картинки (для каталога)
+        elif page.route.startswith("/reference_detail/"):
+            try:
+                catalog_id = int(page.route.split("/")[-1])
+                v = ReferenceDetailView(page, navigate, catalog_id, USER_STATE)
+            except Exception as ex:
+                print(f"Ошибка ReferenceDetailView: {ex}")
+                page.go("/catalog")
+                return
 
-            elif page.route.startswith("/auth"):
-                is_register = "?mode=register" in page.route
-                v = AuthView(page, navigate, USER_STATE, is_register_mode=is_register)
-            
-            elif page.route.startswith("/my_plant_details/"):
+        elif page.route.startswith("/my_plant_details/"):
+            try:
                 pid = int(page.route.split("/")[-1])
                 v = MyPlantDetailsView(page, navigate, pid, USER_STATE)
+            except:
+                page.go("/my_plants")
+                return
 
-            # 3. Стандартные маршруты
-            elif page.route == "/user_home":
-                v = UserHomeView(page, navigate, USER_STATE)
-            
-            elif page.route == "/my_plants":
-                time.sleep(0.05)
-                v = MyPlantsView(page, navigate, USER_STATE)
-            
-            elif page.route == "/scanner":
-                v = ScannerView(page, navigate, USER_STATE, page.scan_picker)
-            
-            elif page.route == "/add_plant":
-                if AddPlantView:
-                    v = AddPlantView(page, navigate, USER_STATE)
-                else:
-                    v = ft.View("/error", controls=[ft.Text("Ошибка: AddPlantView не найден")])
-            
-            elif page.route == "/profile":
-                v = ProfileView(page, navigate, USER_STATE)
+        elif page.route.startswith("/search"):
+            query = unquote(page.route.split("q=")[-1]) if "q=" in page.route else ""
+            v = SearchView(page, navigate, query, USER_STATE)
 
-            elif page.route == "/calendar":
-                v = CalendarView(page, navigate, USER_STATE)
+        elif page.route.startswith("/auth"):
+            is_register = "?mode=register" in page.route
+            v = AuthView(page, navigate, USER_STATE, is_register_mode=is_register)
 
-            elif page.route == "/notifications":
-                v = NotificationsView(page, navigate, USER_STATE)
-            
-            # Роут для справочника (каталога)
-            elif page.route == "/catalog":
-                v = CatalogView(page, navigate, USER_STATE)
-            
-            # ИСПРАВЛЕННЫЙ РОУТ АНАЛИТИКИ (с передачей USER_STATE)
-            elif page.route == "/analytics":
-                v = AnalyticsView(page, navigate, USER_STATE) 
-            
-            elif page.route == "/details":
-                v = DetailsView(page, navigate)
-            
-            elif page.route == "/" or page.route == "":
-                v = HomeView(page, navigate)
-            
-            else:
-                v = HomeView(page, navigate)
-
-            # --- ЛОГИКА NAVBAR ---
-            # Скрываем на логине, интро, формах добавления и справочнике
-            hide_nav_on = ["/", "/auth", "/analytics", "/details", "/search", "/add_plant", "/catalog"]
-            is_reference = page.route.startswith("/reference/")
-            is_plant = page.route.startswith("/my_plant_details/")
-            is_auth = page.route.startswith("/auth")
-
-            if page.route not in hide_nav_on and not is_reference and not is_plant and not is_auth and NavBar:
-                def on_nav_click(idx):
-                    routes = ["/user_home", "/my_plants", "/scanner", "/profile"]
-                    navigate(routes[idx])
-                v.bottom_appbar = NavBar(current_index, on_nav_click)
-            
-            page.views.append(v)
-
-        except Exception as ex:
-            print(f"ОШИБКА РОУТИНГА: {ex}")
-            page.views.append(ft.View("/error", controls=[ft.Text(f"Ошибка: {ex}")]))
+        # --- СТАТИЧЕСКИЕ РОУТЫ ---
+        elif page.route == "/user_home":
+            v = UserHomeView(page, navigate, USER_STATE)
         
+        elif page.route == "/my_plants":
+            v = MyPlantsView(page, navigate, USER_STATE)
+        
+        elif page.route == "/scanner":
+            v = ScannerView(page, navigate, USER_STATE, page.scan_picker)
+        
+        elif page.route == "/catalog":
+            v = CatalogView(page, navigate, USER_STATE)
+        
+        elif page.route == "/profile":
+            v = ProfileView(page, navigate, USER_STATE)
+
+        elif page.route == "/calendar":
+            v = CalendarView(page, navigate, USER_STATE)
+
+        elif page.route == "/notifications":
+            v = NotificationsView(page, navigate, USER_STATE)
+            
+        elif page.route == "/analytics":
+            v = AnalyticsView(page, navigate, USER_STATE)
+            
+        elif page.route == "/details":
+            v = DetailsView(page, navigate)
+
+        elif page.route == "/" or page.route == "":
+            v = HomeView(page, navigate)
+        
+        if v is None:
+            return
+
+        # 2. Управление стеком
+        root_routes = ["/", "/user_home", "/catalog", "/my_plants", "/profile"]
+        if page.route in root_routes:
+            page.views.clear()
+        
+        if len(page.views) > 0 and page.views[-1].route == page.route:
+            return
+
+        # 3. Привязка NavBar
+        hide_nav_on = ["/", "/auth", "/analytics", "/details", "/search", "/add_plant", "/catalog"]
+        
+        # Определяем, является ли вьюха страницей деталей (не показываем на них навбар)
+        is_details = (
+            page.route.startswith("/reference/") or 
+            page.route.startswith("/reference_detail/") or 
+            page.route.startswith("/my_plant_details/")
+        )
+        
+        if page.route not in hide_nav_on and not is_details and NavBar:
+            nav_map = {"/user_home": 0, "/my_plants": 1, "/scanner": 2, "/profile": 3}
+            current_index = nav_map.get(page.route, 0)
+            
+            def on_nav_click(idx):
+                routes = ["/user_home", "/my_plants", "/scanner", "/profile"]
+                page.go(routes[idx])
+                
+            v.bottom_appbar = NavBar(current_index, on_nav_click)
+        
+        # 4. Добавление и отрисовка
+        page.views.append(v)
         page.update()
 
-    # --- ОБРАБОТЧИК КНОПКИ НАЗАД ---
+    # --- Обработчик кнопки "Назад" ---
     def handle_view_pop(e):
         if len(page.views) > 1:
             page.views.pop()
             top_view = page.views[-1]
-            page.go(top_view.route)
+            page.route = top_view.route
+            page.update()
         else:
             page.go("/")
 
