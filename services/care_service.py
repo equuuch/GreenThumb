@@ -1,4 +1,4 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import select, and_
 from datetime import datetime, date, timedelta
 from database.models import Plant, CareCalendar, PlantCatalog
@@ -6,14 +6,15 @@ from database.models import Plant, CareCalendar, PlantCatalog
 class CareService:
     @staticmethod
     def get_today_tasks(db: Session, user_id: int):
-        # получение списка всех невыполненных задач на сегодня и прошедшие даты. 
-        # фильтрация по user_id через связь с таблицей растений гарантирует, 
-        # что пользователь видит только свои уведомления. задачи сортируются 
-        # по дате, чтобы просроченные дела всегда были в топе списка.
-        
+        """
+        Получает список невыполненных задач на сегодня и прошлые даты 
+        для активных растений пользователя.
+        """
         today = date.today()
+        # Используем современный select вместо db.query
         query = (
             select(CareCalendar)
+            .options(joinedload(CareCalendar.plant))
             .join(Plant)
             .where(
                 and_(
@@ -28,30 +29,34 @@ class CareService:
 
     @staticmethod
     def complete_task(db: Session, task_id: int):
-        # фиксация выполнения задачи и автоматическое планирование следующей. 
-        # метод закрывает текущую задачу, обновляет дату последнего полива 
-        # в паспорте растения и рассчитывает дату следующего обслуживания 
-        # на основе default_watering_interval из каталога. это создает 
-        # непрерывный цикл ухода без участия пользователя.
+        """
+        Помечает задачу как выполненную, обновляет статус растения 
+        и автоматически создает следующую задачу на основе интервала.
+        """
+        # Используем Session.get() — это стандарт SQLAlchemy 2.0
+        # Он заменяет устаревший db.query(Model).get(id)
+        task = db.get(
+            CareCalendar, 
+            task_id, 
+            options=[joinedload(CareCalendar.plant)]
+        )
         
-        # Используем .get() для получения актуального состояния задачи
-        task = db.query(CareCalendar).get(task_id)
         if not task:
             return None, "Задача не найдена."
 
-        # 1. отмечаем выполнение
+        # 1. Помечаем текущую задачу выполненной
         task.is_completed = True
         task.completion_date = datetime.now()
         
-        # 2. обновляем статус растения
+        # 2. Если это полив — обновляем дату последнего полива у растения
         plant = task.plant
         if task.task_type == "watering":
             plant.last_watered_at = datetime.now()
         
-        # 3. планируем следующую задачу
-        # берем интервал из каталога, связанного с растением
-        catalog_item = db.query(PlantCatalog).get(plant.catalog_id)
-        interval = catalog_item.default_watering_interval if catalog_item else 7
+        # 3. Планируем следующую задачу
+        # Достаем интервал из каталога (если его нет, берем неделю по умолчанию)
+        catalog_item = db.get(PlantCatalog, plant.catalog_id)
+        interval = catalog_item.default_watering_interval if (catalog_item and catalog_item.default_watering_interval) else 7
         
         next_date = date.today() + timedelta(days=interval)
         
@@ -65,20 +70,26 @@ class CareService:
         try:
             db.add(new_task)
             db.commit()
-            
-            # ВАЖНО: Обновляем объект растения из базы, чтобы Flet увидел новую дату полива
-            db.refresh(plant) 
-            
+            # Обновляем объект, чтобы подтянуть ID новой задачи
+            db.refresh(new_task)
             return new_task, None 
         except Exception as e:
             db.rollback()
-            return None, f"Ошибка при планировании: {str(e)}."
+            return None, f"Ошибка при сохранении: {str(e)}"
 
     @staticmethod
     def get_plant_schedule(db: Session, plant_id: int):
-        # получение будущего графика для конкретного растения
-        # используется фронтендом для отображения календаря в карточке растения
-        return db.query(CareCalendar).filter(
-            CareCalendar.plant_id == plant_id,
-            CareCalendar.is_completed == False
-        ).order_by(CareCalendar.scheduled_date).all()
+        """
+        Возвращает все будущие задачи для конкретного растения.
+        """
+        query = (
+            select(CareCalendar)
+            .where(
+                and_(
+                    CareCalendar.plant_id == plant_id,
+                    CareCalendar.is_completed == False
+                )
+            )
+            .order_by(CareCalendar.scheduled_date)
+        )
+        return db.scalars(query).all()

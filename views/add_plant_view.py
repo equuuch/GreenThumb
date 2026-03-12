@@ -6,11 +6,12 @@ import uuid
 from database.session import get_db
 from database.models import Plant
 from services.ai_services import GigaChatService
+from services.plant_services import PlantService  # Импортируем наш сервис
 from datetime import datetime
 
 def AddPlantView(page: ft.Page, nav, user_state):
     """
-    Версия 2.7: Исправлено мгновенное позеленение шкалы и привязка к каталогу.
+    Версия 2.8: Полная интеграция с PlantService и автоматическое создание задач.
     """
     img_bytes = page.session.get("pending_image")
     use_ai = page.session.get("use_ai_recognition")
@@ -39,7 +40,7 @@ def AddPlantView(page: ft.Page, nav, user_state):
     ai_loader = ft.ProgressBar(visible=False, color="#009753")
     ai_status = ft.Text("", size=12, italic=True, color="grey600")
     
-    # Переменная для ID из каталога
+    # Переменная для ID из каталога (теперь управляется сервисом, но оставим для логов)
     detected_cat_id = [None] 
 
     def auto_detect_name():
@@ -53,24 +54,21 @@ def AddPlantView(page: ft.Page, nav, user_state):
             
         try:
             ai = GigaChatService()
-            # Получаем кортеж (текст, catalog_id)
-            res_data = ai.diagnose_plant(next(get_db()), user_state.get("id", 1), img_bytes)
+            # Используем обновленный метод идентификации
+            res_data, err = ai.identify_plant_photo(next(get_db()), user_state.get("id", 1), img_bytes)
             
             if res_data:
-                full_text = res_data[0] if isinstance(res_data, tuple) else res_data
-                if isinstance(res_data, tuple) and len(res_data) > 1:
-                    detected_cat_id[0] = res_data[1] # Сохраняем найденный ID
+                # В res_data теперь должен приходить чистый JSON с именем
+                detected_name = res_data.get("common_name") or res_data.get("species_name")
                 
-                # Парсинг названия
-                if "Вид растения:" in full_text:
-                    detected_name = full_text.split("Вид растения:")[1].split("\n")[0].strip()
-                else:
-                    detected_name = full_text.split('\n')[0].split('.')[0].strip()
-
                 if detected_name:
                     name_field.value = detected_name
                     ai_status.value = "Растение определено успешно!"
                     ai_status.color = "green"
+            else:
+                ai_status.value = "ИИ не смог точно определить вид"
+                ai_status.color = "orange"
+
         except Exception as e:
             print(f"Ошибка в потоке ИИ: {e}")
             ai_status.value = "Ошибка связи с GigaChat"
@@ -84,8 +82,7 @@ def AddPlantView(page: ft.Page, nav, user_state):
 
     def save_to_db(e):
         if not name_field.value or not height_field.value:
-            page.snack_bar = ft.SnackBar(ft.Text("Заполните все поля!"), bgcolor="orange")
-            page.snack_bar.open = True
+            page.overlay.append(ft.SnackBar(ft.Text("Заполните все поля!"), bgcolor="orange"))
             page.update()
             return
 
@@ -93,48 +90,52 @@ def AddPlantView(page: ft.Page, nav, user_state):
         save_btn.content = ft.ProgressRing(width=20, height=20, color="white")
         page.update()
 
-        # Сохранение фото
-        db_path = ""
-        if img_bytes:
-            try:
-                if not os.path.exists("assets/plants"):
-                    os.makedirs("assets/plants")
-                filename = f"{uuid.uuid4().hex}.jpg"
-                file_path = os.path.join("assets/plants", filename)
-                with open(file_path, "wb") as f:
-                    f.write(img_bytes)
-                db_path = f"/plants/{filename}"
-            except Exception as file_ex:
-                print(f"Ошибка файла: {file_ex}")
-
-        # Запись в базу
         try:
             with next(get_db()) as db:
-                new_plant = Plant(
-                    user_id=user_state.get("id", 1),
-                    catalog_id=detected_cat_id[0], # Привязываем к каталогу, если ИИ нашел
-                    custom_name=name_field.value,
-                    image_url=db_path,
-                    status_text=f"Рост: {height_field.value} см", 
-                    user_light_level=selected_light,
-                    is_active=1,
-                    # ВАЖНО: Ставим текущее время полива сразу!
-                    last_watered_at=datetime.now(),
-                    added_at=datetime.now()
+                ai_service = GigaChatService()
+                user_id = user_state.get("id", 1)
+
+                # 1. Получаем или создаем запись в каталоге через сервис
+                # Если названия нет в БД, ИИ сам сгенерирует паспорт
+                catalog_item, err = PlantService.get_or_create_catalog_item(
+                    db, ai_service, user_id, name_field.value
                 )
-                db.add(new_plant)
-                db.commit()
                 
+                if err:
+                    raise Exception(f"Ошибка каталога: {err}")
+
+                # 2. Подготавливаем данные для создания растения
+                catalog_data = {
+                    'species_name': catalog_item.species_name,
+                    'latin_name': catalog_item.latin_name,
+                    'description': catalog_item.description,
+                    'watering_interval': catalog_item.default_watering_interval,
+                    'light_level': catalog_item.default_light_level
+                }
+
+                # 3. Создаем растение и автоматическую задачу на сегодня
+                new_plant, plant_err = PlantService.confirm_and_create_plant(
+                    db,
+                    user_id=user_id,
+                    catalog_data=catalog_data,
+                    custom_name=name_field.value,
+                    image_bytes=img_bytes
+                )
+
+                if plant_err:
+                    raise Exception(plant_err)
+
             # Очистка сессии
             for key in ["pending_image", "pending_light", "use_ai_recognition"]:
                 page.session.remove(key)
 
-            page.snack_bar = ft.SnackBar(ft.Text("Растение добавлено в сад!"), bgcolor="#009753")
-            page.snack_bar.open = True
-            nav("/my_plants") # Сразу в список, чтобы увидеть результат
+            # Выводим уведомление и уходим в список
+            page.overlay.append(ft.SnackBar(ft.Text("Растение и график ухода созданы!"), bgcolor="#009753"))
+            nav("/my_plants")
             
         except Exception as ex:
             print(f"Save error: {ex}")
+            page.overlay.append(ft.SnackBar(ft.Text(f"Ошибка: {str(ex)}"), bgcolor="red"))
             save_btn.disabled = False
             save_btn.content = ft.Text("Сохранить в сад", size=16, weight="bold")
             page.update()
@@ -181,6 +182,7 @@ def AddPlantView(page: ft.Page, nav, user_state):
                     retry_btn if use_ai else ft.Container()
                 ], 
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                # Добавим скролл на случай маленьких экранов
                 scroll=ft.ScrollMode.ADAPTIVE,
                 spacing=15
                 ),

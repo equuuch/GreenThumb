@@ -4,6 +4,7 @@ from database.models import Plant
 from services.plant_services import PlantService
 from sqlalchemy.orm import joinedload
 from datetime import datetime
+import os
 
 def MyPlantsView(page: ft.Page, nav, user_state):
     view = ft.View()
@@ -11,6 +12,7 @@ def MyPlantsView(page: ft.Page, nav, user_state):
     view.bgcolor = "#F9F9F9"
     view.padding = 0 
 
+    # Берем ID текущего пользователя из стейта
     user_id = user_state.get("id") or 1
 
     # 1. ЗАГРУЗКА ДАННЫХ
@@ -23,11 +25,11 @@ def MyPlantsView(page: ft.Page, nav, user_state):
             .all()
         )
         for p in my_plants:
-            print(f"DEBUG: {p.custom_name} | Last watered: {p.last_watered_at}")
+            print(f"DEBUG: {p.custom_name} | Path in DB: {p.image_url}")
 
-    # ИСПРАВЛЕННАЯ ЛОГИКА ЦВЕТА: теперь 0.5 и выше — это зеленый
+    # Логика цвета индикаторов (0.5+ зеленый, 0.2+ желтый, меньше — красный)
     def get_status_color(val):
-        if val >= 0.5: return "#009753"  # Зеленый (теперь совпадает с визуалом шкал)
+        if val >= 0.5: return "#009753"  # Зеленый
         if val > 0.2: return "#FFC107"   # Желтый
         return "#FF5252"                # Красный
 
@@ -59,13 +61,24 @@ def MyPlantsView(page: ft.Page, nav, user_state):
         ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
     )
 
-    # 3. ФУНКЦИЯ КАРТОЧКИ
+    # 3. ФУНКЦИЯ СОЗДАНИЯ КАРТОЧКИ
     def create_plant_card(plant_obj):
-        img_path = f"assets/{plant_obj.image_url}" if plant_obj.image_url else "https://images.unsplash.com/photo-1453904300235-0f2f60b15b5d?q=80&w=300"
+        # ИСПРАВЛЕННЫЙ ПУТЬ:
+        if plant_obj.image_url:
+            # 1. Чистим от префикса assets/ и приводим к прямым слешам для Flet
+            img_path = plant_obj.image_url.replace("assets/", "").replace("\\", "/")
+            
+            # 2. Проверка на диске (нормализуем путь под Windows для os.path.exists)
+            full_path_on_disk = os.path.normpath(os.path.join("assets", img_path))
+            if not os.path.exists(full_path_on_disk):
+                print(f"❌ ОШИБКА: Файл не найден по пути: {full_path_on_disk}")
+        else:
+            img_path = "https://images.unsplash.com/photo-1453904300235-0f2f60b15b5d?q=80&w=300"
         
         cat = plant_obj.catalog_info
         water_val = 0.0
 
+        # Расчет влажности
         if plant_obj.last_watered_at and cat and cat.default_watering_interval:
             diff_seconds = (datetime.now() - plant_obj.last_watered_at).total_seconds()
             interval_seconds = cat.default_watering_interval * 24 * 3600
@@ -77,7 +90,7 @@ def MyPlantsView(page: ft.Page, nav, user_state):
         elif plant_obj.last_watered_at:
             water_val = 0.8
         
-        # ИСПРАВЛЕНИЕ: Берем ручную настройку света, если она есть
+        # Уровень света (из настроек пользователя или дефолт каталога)
         light_val = plant_obj.user_light_level if plant_obj.user_light_level is not None else (cat.default_light_level if cat else 0.5)
         health_val = 1.0 if water_val > 0.2 else 0.4
 
@@ -99,7 +112,8 @@ def MyPlantsView(page: ft.Page, nav, user_state):
                         content=ft.Image(
                             src=img_path, 
                             fit=ft.ImageFit.COVER, 
-                            border_radius=ft.border_radius.only(top_left=25, top_right=25)
+                            border_radius=ft.border_radius.only(top_left=25, top_right=25),
+                            error_content=ft.Icon(ft.Icons.IMAGE_NOT_SUPPORTED, color="grey300")
                         )
                     ),
                     ft.Container(
@@ -128,6 +142,7 @@ def MyPlantsView(page: ft.Page, nav, user_state):
             )
         )
 
+    # Основная сетка
     grid = ft.ResponsiveRow(spacing=15, run_spacing=15)
     
     if not my_plants:
@@ -148,6 +163,7 @@ def MyPlantsView(page: ft.Page, nav, user_state):
         for p in my_plants:
             grid.controls.append(create_plant_card(p))
 
+    # Формируем итоговый вид
     view.controls.append(
         ft.ListView(
             controls=[

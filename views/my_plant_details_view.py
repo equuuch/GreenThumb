@@ -14,6 +14,7 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
     # 1. ЗАГРУЗКА ДАННЫХ ИЗ БД
     with next(get_db()) as db:
         db.expire_all() 
+        # Добавляем joinedload для catalog_info, чтобы данные были доступны сразу
         plant = db.query(Plant).options(
             joinedload(Plant.catalog_info)
         ).filter(Plant.plant_id == plant_id).first()
@@ -21,22 +22,30 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
         if not plant:
             return ft.View(controls=[ft.Text("Растение не найдено")])
 
-        cat_info = plant.catalog_info
+        # Копируем данные в локальные переменные, чтобы не зависеть от сессии
+        p_custom_name = plant.custom_name
+        p_image_url = plant.image_url
+        p_last_watered = plant.last_watered_at
+        p_user_light = plant.user_light_level
         
-        # --- МАТЕМАТИКА ВЛАГИ (ТВОИ 180 СТРОК ЛОГИКИ) ---
-        # Если в базе нет интервала, берем 3 дня как стандарт
-        interval_days = cat_info.default_watering_interval if (cat_info and cat_info.default_watering_interval) else 3
+        cat_info = plant.catalog_info
+        p_species_name = cat_info.species_name if cat_info else "Неизвестный вид"
+        p_def_interval = cat_info.default_watering_interval if (cat_info and cat_info.default_watering_interval) else 3
+        p_def_light = cat_info.default_light_level if cat_info else 0.5
+
+        # --- МАТЕМАТИКА ВЛАГИ ---
+        interval_days = p_def_interval
         water_val = 0.5 
         
-        if plant.last_watered_at:
+        if p_last_watered:
             interval_sec = interval_days * 24 * 3600
-            diff_sec = (datetime.now() - plant.last_watered_at).total_seconds()
+            diff_sec = (datetime.now() - p_last_watered).total_seconds()
             # Процент: 1.0 (только что полили) до 0.0 (высохло)
             water_val = max(0.0, min(1.0, 1.0 - (diff_sec / interval_sec)))
-            print(f"DEBUG MATH: Растение {plant.custom_name}, Процент влаги: {water_val:.2f}")
+            print(f"DEBUG MATH: Растение {p_custom_name}, Процент влаги: {water_val:.2f}")
 
         # Свет: сначала смотрим ручную настройку, потом каталог
-        light_val = plant.user_light_level if plant.user_light_level is not None else (cat_info.default_light_level if cat_info else 0.5)
+        light_val = p_user_light if p_user_light is not None else p_def_light
         health_val = 1.0 if water_val > 0.2 else 0.4
 
     # --- ЭЛЕМЕНТЫ ШКАЛЫ (100-балльная система) ---
@@ -56,15 +65,13 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
 
     # --- ЛОГИКА РЕДАКТИРОВАНИЯ И АРХИВАЦИИ ---
     def show_edit_sheet(e):
-        # Поля ввода для BottomSheet
         name_input = ft.TextField(
             label="Название растения", 
-            value=plant.custom_name, 
+            value=p_custom_name, 
             border_color="#009753",
             focused_border_color="#004D40"
         )
         
-        # Желтый слайдер без всплывающего текста
         light_slider = ft.Slider(
             min=0, max=1, divisions=10, 
             value=light_val, 
@@ -82,17 +89,17 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
                     db.commit()
             page.bottom_sheet.open = False
             page.update()
-            nav(f"/my_plant_details/{plant_id}") # Рефреш страницы
+            nav(f"/my_plant_details/{plant_id}") 
 
         def archive_plant(e):
             with next(get_db()) as db:
                 plant_db = db.query(Plant).filter(Plant.plant_id == plant_id).first()
                 if plant_db:
-                    plant_db.is_active = False # Уходит в архив
+                    plant_db.is_active = False 
                     db.commit()
             page.bottom_sheet.open = False
             page.update()
-            nav("/my_plants") # Возврат в основной список
+            nav("/my_plants") 
 
         page.bottom_sheet = ft.BottomSheet(
             ft.Container(
@@ -102,7 +109,6 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
                 content=ft.Column([
                     ft.Text("Управление растением", size=20, weight="bold", color="black"),
                     name_input,
-                    # Секция света с солнышком
                     ft.Column([
                         ft.Row([
                             ft.Icon(ft.Icons.WB_SUNNY_ROUNDED, color="#FFC107", size=20),
@@ -143,8 +149,6 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
             plant_db = db.query(Plant).filter(Plant.plant_id == plant_id).first()
             if plant_db:
                 plant_db.last_watered_at = datetime.now()
-                
-                # Закрываем активную задачу в календаре
                 task = db.query(CareCalendar).filter(
                     CareCalendar.plant_id == plant_id,
                     CareCalendar.task_type == "watering",
@@ -156,9 +160,7 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
                     task.completion_date = datetime.now()
                 
                 db.commit()
-            db.close()
 
-        # Мгновенное обновление UI
         water_bar_fill.expand = 100
         water_bar_fill.bgcolor = "#009753"
         water_bar_empty.expand = 0
@@ -198,7 +200,9 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
         ])
 
     # --- ВЕРСТКА ИНТЕРФЕЙСА ---
-    img_src = f"assets/{plant.image_url}" if plant.image_url else "https://images.unsplash.com/photo-1453904300235-0f2f60b15b5d?q=80&w=300"
+    # Очистка пути для фото (замена слэшей для Windows)
+    clean_img_path = p_image_url.replace("\\", "/") if p_image_url else None
+    img_src = f"assets/{clean_img_path}" if clean_img_path else "https://images.unsplash.com/photo-1453904300235-0f2f60b15b5d?q=80&w=300"
 
     header = ft.Stack([
         ft.Image(src=img_src, fit=ft.ImageFit.COVER, width=400, height=450),
@@ -216,7 +220,7 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
                     ft.Icons.EDIT_OUTLINED, 
                     icon_color="black", 
                     bgcolor="white70",
-                    on_click=show_edit_sheet # Кнопка редактирования
+                    on_click=show_edit_sheet 
                 )
             ], alignment="spaceBetween")
         )
@@ -230,10 +234,10 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
         expand=True,
         content=ft.Column([
             ft.Row([
-                ft.Text(plant.custom_name, size=28, weight="bold", color="black"),
+                ft.Text(p_custom_name, size=28, weight="bold", color="black"),
                 ft.Container(width=12, height=12, bgcolor="#009753" if health_val > 0.5 else "red", border_radius=6)
             ], alignment="spaceBetween"),
-            ft.Text(cat_info.species_name if cat_info else "Неизвестный вид", size=16, color="grey600"),
+            ft.Text(p_species_name, size=16, color="grey600"),
             ft.Container(height=25),
             
             create_stat("Уровень влаги", ft.Icons.WATER_DROP_OUTLINED, water_val, water_bar_fill, water_bar_empty),

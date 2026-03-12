@@ -35,20 +35,20 @@ def seed_data():
             "aliases": ["алоэ", "столетник", "алое"]
         },
         {
-            "species_name": "Петрушка Кудрявая",
+            "species_name": "Петрушка",
             "latin_name": "Petroselinum crispum",
             "description": "Пряное растение. Любит воду.",
             "default_watering_interval": 3,
             "default_light_level": 0.7,
-            "aliases": ["петрушка", "зелень"]
+            "aliases": ["петрушка кудрявая", "зелень"]
         },
         {
-            "species_name": "Роза Комнатная",
+            "species_name": "Роза",
             "latin_name": "Rosa chinensis",
-            "description": "Миниатюрная роза.",
+            "description": "Миниатюрная комнатная роза.",
             "default_watering_interval": 5,
             "default_light_level": 0.9,
-            "aliases": ["роза"]
+            "aliases": ["роза комнатная"]
         },
         {
             "species_name": "Гибискус",
@@ -83,7 +83,7 @@ def seed_data():
     db.commit()
     print("✅ Каталог и Алиасы наполнены")
 
-    # 3. Добавляем растения пользователю с РАЗНЫМИ уровнями света
+    # 3. Добавляем растения пользователю с чистыми названиями
     cats = {c.species_name: c.catalog_id for c in db.query(PlantCatalog).all()}
     
     if db.query(Plant).filter_by(user_id=user.user_id).count() == 0:
@@ -91,38 +91,37 @@ def seed_data():
             Plant(
                 user_id=user.user_id,
                 catalog_id=cats.get("Алоэ Вера"),
-                custom_name="Алоэ на подоконнике",
-                image_url="/aloe.png",
+                custom_name="Алоэ Вера",
+                image_url="plants/aloe.png",
                 last_watered_at=datetime.now() - timedelta(days=2),
-                user_light_level=0.9,  # Зеленое солнце
-                status_text="Отличное состояние. Подарок от дедушки.",
+                user_light_level=0.9,  
+                status_text="Отличное состояние.",
                 is_active=True
             ),
             Plant(
                 user_id=user.user_id,
-                catalog_id=cats.get("Петрушка Кудрявая"),
-                custom_name="Зелень в тени",
-                image_url="/petrushka.png",
+                catalog_id=cats.get("Петрушка"),
+                custom_name="Петрушка",
+                image_url="plants/petrushka.png",
                 last_watered_at=datetime.now(),
-                user_light_level=0.4,  # Желтое солнце
-                status_text="Стадия: Рассада.",
+                user_light_level=0.4,  
+                status_text="Растет стабильно.",
                 is_active=True
             ),
             Plant(
                 user_id=user.user_id,
-                catalog_id=cats.get("Роза Комнатная"),
-                custom_name="Роза в шкафу",
-                image_url="/rose.png",
+                catalog_id=cats.get("Роза"),
+                custom_name="Роза",
+                image_url="plants/rose.png",
                 last_watered_at=datetime.now() - timedelta(days=1),
-                user_light_level=0.1,  # Красное солнце
-                status_text="Нужен свет!",
+                user_light_level=0.1,  
+                status_text="Требуется больше света.",
                 is_active=True
             )
-            
         ]
         db.add_all(my_plants)
         db.commit()
-        print(f"✅ В сад добавлено {len(my_plants)} растений с тестовым освещением")
+        print(f"✅ В сад добавлено {len(my_plants)} растений с обновленными названиями")
 
     db.close()
 

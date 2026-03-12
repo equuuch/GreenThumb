@@ -60,17 +60,15 @@ def main(page: ft.Page):
 
     # --- ФУНКЦИЯ НАВИГАЦИИ ---
     def navigate(route_str):
-        # Принудительно заставляем роутер сменить путь
         page.route = route_str
         page.go(route_str)
-        # Дополнительный апдейт для синхронизации
         page.update()
 
     # --- ГЛАВНЫЙ ОБРАБОТЧИК МАРШРУТОВ ---
     def handle_route_change(e):
         print(f"DEBUG: Текущий маршрут: {page.route}")
         
-        # 1. Полная очистка стека вьюх перед созданием новой
+        # Полная очистка стека перед созданием новой вьюхи
         page.views.clear()
         
         nav_map = {"/user_home": 0, "/my_plants": 1, "/scanner": 2, "/profile": 3}
@@ -106,7 +104,6 @@ def main(page: ft.Page):
                 v = UserHomeView(page, navigate, USER_STATE)
             
             elif page.route == "/my_plants":
-                # Небольшая пауза помогает SQLite "отпустить" файл после коммита в деталях
                 time.sleep(0.05)
                 v = MyPlantsView(page, navigate, USER_STATE)
             
@@ -146,20 +143,23 @@ def main(page: ft.Page):
                     navigate(routes[idx])
                 v.bottom_appbar = NavBar(current_index, on_nav_click)
             
-            # Добавляем новую, свежесозданную вьюху
             page.views.append(v)
 
         except Exception as ex:
-            print(f"ОШИБКА: {ex}")
+            print(f"ОШИБКА РОУТИНГА: {ex}")
             page.views.append(ft.View("/error", controls=[ft.Text(f"Ошибка: {ex}")]))
         
         page.update()
 
-    # Очистка вьюхи при нажатии системной кнопки "Назад" (Android/Web)
+    # --- ИСПРАВЛЕННЫЙ ОБРАБОТЧИК КНОПКИ НАЗАД ---
     def handle_view_pop(e):
-        page.views.pop()
-        top_view = page.views[-1]
-        page.go(top_view.route)
+        if len(page.views) > 1:
+            page.views.pop()
+            top_view = page.views[-1]
+            page.go(top_view.route)
+        else:
+            # Если в стеке одна вьюха, просто идем на главную
+            page.go("/")
 
     page.on_route_change = handle_route_change
     page.on_view_pop = handle_view_pop
