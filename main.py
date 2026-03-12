@@ -17,6 +17,8 @@ from views.details_view import DetailsView
 from views.search_view import SearchView
 from views.calendar_view import CalendarView
 from views.notifications_view import NotificationsView
+# Добавлена вьюшка каталога
+from views.catalog_view import CatalogView 
 
 # Импорт вьюхи добавления растения
 try:
@@ -128,6 +130,10 @@ def main(page: ft.Page):
             elif page.route == "/notifications":
                 v = NotificationsView(page, navigate, USER_STATE)
             
+            # Роут для справочника (каталога)
+            elif page.route == "/catalog":
+                v = CatalogView(page, navigate, USER_STATE)
+            
             # ИСПРАВЛЕННЫЙ РОУТ АНАЛИТИКИ (с передачей USER_STATE)
             elif page.route == "/analytics":
                 v = AnalyticsView(page, navigate, USER_STATE) 
@@ -142,8 +148,8 @@ def main(page: ft.Page):
                 v = HomeView(page, navigate)
 
             # --- ЛОГИКА NAVBAR ---
-            # Скрываем на логине, интро и формах добавления
-            hide_nav_on = ["/", "/auth", "/analytics", "/details", "/search", "/add_plant"]
+            # Скрываем на логине, интро, формах добавления и справочнике
+            hide_nav_on = ["/", "/auth", "/analytics", "/details", "/search", "/add_plant", "/catalog"]
             is_reference = page.route.startswith("/reference/")
             is_plant = page.route.startswith("/my_plant_details/")
             is_auth = page.route.startswith("/auth")

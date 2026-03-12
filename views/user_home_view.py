@@ -3,6 +3,8 @@ from database.session import get_db
 from services.plant_services import PlantService
 from services.care_service import CareService
 from datetime import date
+from database.models import CareCalendar, Plant, PlantCatalog
+from sqlalchemy import select
 
 def UserHomeView(page: ft.Page, nav, user_state):
     view = ft.View()
@@ -15,16 +17,10 @@ def UserHomeView(page: ft.Page, nav, user_state):
 
     # 1. ЗАГРУЗКА ДАННЫХ ИЗ БАЗЫ
     with next(get_db()) as db:
-        # Получаем активные растения
         my_plants = PlantService.get_user_plants(db, user_id)
-        # Получаем задачи на сегодня
         today_tasks = CareService.get_today_tasks(db, user_id)
         
-        # Проверка на наличие просроченных задач для индикатора уведомлений
-        # Мы просто смотрим, есть ли в базе задачи с датой < сегодня, которые не выполнены
-        from database.models import CareCalendar, Plant
-        from sqlalchemy import select
-        
+        # Проверка на наличие просроченных задач
         has_alerts = db.scalar(
             select(CareCalendar)
             .join(Plant)
@@ -36,22 +32,30 @@ def UserHomeView(page: ft.Page, nav, user_state):
         ) is not None
 
     # --- ШАПКА ---
-    # Создаем иконку уведомлений с индикатором или без
+    
+    # Иконка уведомлений
     notification_icon = ft.Stack([
         ft.IconButton(
             icon=ft.Icons.NOTIFICATIONS_OUTLINED,
             icon_color="black",
-            on_click=lambda _: nav("/notifications") # Переход на новый экран
+            on_click=lambda _: nav("/notifications")
         ),
-        # Если есть алерты — рисуем красную точку
         ft.Container(
             content=ft.CircleAvatar(bgcolor="red", radius=4),
             alignment=ft.alignment.top_right,
             right=5,
             top=5,
-            visible=has_alerts # Точка видна только если есть просроченные задачи
+            visible=has_alerts
         )
     ])
+
+    # КНОПКА СПРАВОЧНИКА
+    catalog_button = ft.IconButton(
+        icon=ft.Icons.MENU_BOOK_OUTLINED,
+        icon_color="black",
+        tooltip="Справочник растений",
+        on_click=lambda _: nav("/catalog") # Маршрут для просмотра PlantCatalog
+    )
 
     header = ft.Row(
         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
@@ -60,24 +64,31 @@ def UserHomeView(page: ft.Page, nav, user_state):
                 ft.Text(f"Здравствуйте, {user_name}!", size=12, color="#6E6E6E"),
                 ft.Text("Ваш сад", size=26, weight="bold", color="black"),
             ], spacing=2),
-            notification_icon
+            # Группируем кнопки справочника и уведомлений
+            ft.Row([
+                catalog_button,
+                notification_icon
+            ], spacing=0)
         ]
     )
 
     # --- ПРЕВЬЮ РАСТЕНИЙ (Grid) ---
     grid = ft.ResponsiveRow(spacing=15)
     if not my_plants:
-        grid.controls.append(ft.Text("В саду пока пусто...", size=14, color="gray", italic=True))
+        grid.controls.append(
+            ft.Container(
+                content=ft.Text("В саду пока пусто...", size=14, color="gray", italic=True),
+                padding=20
+            )
+        )
     else:
-        # Показываем только первые 2 для главного экрана
         for p in my_plants[:2]:
-            # Исправляем путь: если в БД только имя файла, добавляем путь к ассетам
             img_path = f"uploads/{p.image_url}" if p.image_url else "/aloe.png"
             grid.controls.append(
                 ft.Container(
-                    bgcolor="white", padding=10, border_radius=20, col=6,
+                    bgcolor="white", padding=10, border_radius=20, col={"xs": 6, "sm": 6},
                     shadow=ft.BoxShadow(blur_radius=10, color="black12"),
-                    on_click=lambda _: nav("/my_plants"),
+                    on_click=lambda _: nav(f"/my_plant_details/{p.plant_id}"),
                     content=ft.Column([
                         ft.Image(src=img_path, width=150, height=110, fit="cover", border_radius=15),
                         ft.Text(p.custom_name, weight="bold", size=14, color="black", max_lines=1),
