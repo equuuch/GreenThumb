@@ -19,20 +19,21 @@ from views.calendar_view import CalendarView
 from views.notifications_view import NotificationsView
 from views.catalog_view import CatalogView 
 
-# Импорт вьюхи добавления растения
+# Импорт вьюхи добавления (проверь, чтобы имя файла было add_plant_view.py)
 try:
     from views.add_plant_view import AddPlantView
-except ImportError:
+except ImportError as e:
+    print(f"ОШИБКА ИМПОРТА AddPlantView: {e}")
     AddPlantView = None
 
-# Попытка импорта NavBar
+# Импорт NavBar
 try:
     from components.nav_bar import NavBar
 except ImportError:
     NavBar = None
 
-# Глобальный стейт приложения
-USER_STATE = {"id": None, "name": "Гость"}
+# Глобальный стейт приложения (id=1 для тестов, если бд уже есть)
+USER_STATE = {"id": 1, "name": "Пользователь"}
 
 def main(page: ft.Page):
     # 1. Инициализация БД
@@ -43,27 +44,24 @@ def main(page: ft.Page):
     page.bgcolor = "white"
     page.padding = 0
     
-    # УДАЛЕНО: Регистрация Manrope и настройки весов в Theme
-    page.fonts = {} 
-
+    # Плавные переходы
     page.theme = ft.Theme(
         page_transitions=ft.PageTransitionsTheme(
             android="fadeThrough",
             ios="cupertino",
-            windows="fadeThrough",
-            macos="zoom",
+            windows="fadeThrough"
         )
     )
 
-    # Установка размеров окна
+    # Установка размеров окна (мобильный формат)
     page.window.width = 400
     page.window.height = 800
 
+    # Глобальный FilePicker для сканера
     if not hasattr(page, "scan_picker"):
         page.scan_picker = ft.FilePicker()
         page.overlay.append(page.scan_picker)
 
-    # Вспомогательная функция навигации
     def navigate(route_str):
         page.go(route_str)
 
@@ -73,79 +71,82 @@ def main(page: ft.Page):
         
         v = None
         
-        # 1. Логика выбора вьюхи
-        if page.route.startswith("/reference/"):
-            try:
+        try:
+            # 1. Логика динамических маршрутов (с ID)
+            if page.route.startswith("/reference/"):
                 catalog_id = int(page.route.split("/")[-1])
                 v = ReferenceView(page, navigate, catalog_id, USER_STATE)
-            except Exception as ex:
-                print(f"Ошибка ReferenceView: {ex}")
-                page.go("/catalog")
-                return
 
-        elif page.route.startswith("/reference_detail/"):
-            try:
+            elif page.route.startswith("/reference_detail/"):
                 catalog_id = int(page.route.split("/")[-1])
                 v = ReferenceDetailView(page, navigate, catalog_id, USER_STATE)
-            except Exception as ex:
-                print(f"Ошибка ReferenceDetailView: {ex}")
-                page.go("/catalog")
-                return
 
-        elif page.route.startswith("/my_plant_details/"):
-            try:
+            elif page.route.startswith("/my_plant_details/"):
                 pid = int(page.route.split("/")[-1])
                 v = MyPlantDetailsView(page, navigate, pid, USER_STATE)
-            except:
-                page.go("/my_plants")
-                return
 
-        elif page.route.startswith("/search"):
-            query = unquote(page.route.split("q=")[-1]) if "q=" in page.route else ""
-            v = SearchView(page, navigate, query, USER_STATE)
+            elif page.route.startswith("/search"):
+                query = unquote(page.route.split("q=")[-1]) if "q=" in page.route else ""
+                v = SearchView(page, navigate, query, USER_STATE)
 
-        elif page.route.startswith("/auth"):
-            is_register = "?mode=register" in page.route
-            v = AuthView(page, navigate, USER_STATE, is_register_mode=is_register)
+            # 2. Логика статических маршрутов
+            elif page.route.startswith("/auth"):
+                is_register = "?mode=register" in page.route
+                v = AuthView(page, navigate, USER_STATE, is_register_mode=is_register)
 
-        elif page.route == "/user_home":
+            elif page.route == "/user_home":
+                v = UserHomeView(page, navigate, USER_STATE)
+            
+            elif page.route == "/my_plants":
+                v = MyPlantsView(page, navigate, USER_STATE)
+            
+            elif page.route == "/scanner":
+                v = ScannerView(page, navigate, USER_STATE, page.scan_picker)
+
+            elif page.route == "/add_plant":
+                if AddPlantView:
+                    v = AddPlantView(page, navigate, USER_STATE)
+                else:
+                    print("Ошибка: AddPlantView не загружен")
+                    page.go("/scanner")
+                    return
+            
+            elif page.route == "/catalog":
+                v = CatalogView(page, navigate, USER_STATE)
+            
+            elif page.route == "/profile":
+                v = ProfileView(page, navigate, USER_STATE)
+
+            elif page.route == "/calendar":
+                v = CalendarView(page, navigate, USER_STATE)
+
+            elif page.route == "/notifications":
+                v = NotificationsView(page, navigate, USER_STATE)
+                
+            elif page.route == "/analytics":
+                v = AnalyticsView(page, navigate, USER_STATE)
+                
+            elif page.route == "/details":
+                v = DetailsView(page, navigate)
+
+            elif page.route in ["/", ""]:
+                v = HomeView(page, navigate)
+
+        except Exception as route_ex:
+            print(f"Критическая ошибка роутинга {page.route}: {route_ex}")
+            # Откат на домашнюю при ошибке
             v = UserHomeView(page, navigate, USER_STATE)
-        
-        elif page.route == "/my_plants":
-            v = MyPlantsView(page, navigate, USER_STATE)
-        
-        elif page.route == "/scanner":
-            v = ScannerView(page, navigate, USER_STATE, page.scan_picker)
-        
-        elif page.route == "/catalog":
-            v = CatalogView(page, navigate, USER_STATE)
-        
-        elif page.route == "/profile":
-            v = ProfileView(page, navigate, USER_STATE)
 
-        elif page.route == "/calendar":
-            v = CalendarView(page, navigate, USER_STATE)
-
-        elif page.route == "/notifications":
-            v = NotificationsView(page, navigate, USER_STATE)
-            
-        elif page.route == "/analytics":
-            v = AnalyticsView(page, navigate, USER_STATE)
-            
-        elif page.route == "/details":
-            v = DetailsView(page, navigate)
-
-        elif page.route == "/" or page.route == "":
-            v = HomeView(page, navigate)
-        
         if v is None:
+            print(f"ВНИМАНИЕ: Для роута {page.route} не найдена вьюха!")
             return
 
-        # 2. Управление стеком
+        # 2. Управление стеком (очистка при переходе на главные экраны)
         root_routes = ["/", "/user_home", "/catalog", "/my_plants", "/profile"]
         if page.route in root_routes:
             page.views.clear()
         
+        # Предотвращение дублирования в стеке
         if len(page.views) > 0 and page.views[-1].route == page.route:
             return
 
@@ -184,7 +185,9 @@ def main(page: ft.Page):
     page.on_route_change = handle_route_change
     page.on_view_pop = handle_view_pop
     
+    # Запуск
     page.go(page.route or "/")
 
 if __name__ == "__main__":
+    # Убедись, что папка assets существует, иначе удали assets_dir
     ft.app(target=main, assets_dir="assets")

@@ -12,8 +12,10 @@ class PlantService:
     def get_catalog_item_by_name(db: Session, name: str):
         """
         Стандартный поиск вида в справочнике. 
-        Сначала проверяем таблицу алиасов, затем официальный реестр.
         """
+        if not name:
+            return None
+            
         alias = db.query(PlantAlias).filter(PlantAlias.user_input == name.lower()).first()
         if alias:
             return db.query(PlantCatalog).filter(PlantCatalog.catalog_id == alias.catalog_id).first()
@@ -24,31 +26,25 @@ class PlantService:
     def get_or_create_catalog_item(db: Session, ai_service, user_id: int, query: str):
         """
         Алгоритм автоматического расширения справочника. 
-        Если растения нет локально, ИИ генерирует техпаспорт и сохраняет его в базу.
         """
-        # 1. Попытка локального поиска
         item = PlantService.get_catalog_item_by_name(db, query)
         if item:
             return item, None
 
-        # 2. Нормализация названия через ИИ
         norm_data, err = ai_service.identify_by_name(db, user_id, query)
-        if err or not norm_data.get('is_plant'):
+        if err or not norm_data or not norm_data.get('is_plant'):
             return None, "Растение не найдено в базе и не опознано ассистентом."
 
         standard_name = norm_data['standard_name']
         
-        # Проверка по стандартному имени (защита от дублей)
         item = db.query(PlantCatalog).filter_by(species_name=standard_name).first()
         if item:
             return item, None
 
-        # 3. Генерация паспорта для нового вида
         passport, err = ai_service.get_passport_data(db, user_id, standard_name)
         if err:
             return None, f"Ошибка при получении данных от ИИ: {err}."
 
-        # 4. Запись нового вида в глобальный каталог
         try:
             new_catalog_item = PlantCatalog(
                 species_name=passport.get('species_name', standard_name),
@@ -58,13 +54,13 @@ class PlantService:
                 default_light_level=float(passport.get('light_level', 0.5))
             )
             db.add(new_catalog_item)
-            db.flush()
+            db.flush() 
 
-            # Фиксируем ввод пользователя как алиас для будущего поиска
             new_alias = PlantAlias(user_input=query.lower(), catalog_id=new_catalog_item.catalog_id)
             db.add(new_alias)
-            db.commit()
-            db.refresh(new_catalog_item)
+            db.flush()
+            
+            # Мы не делаем здесь commit, так как обычно это часть большой транзакции создания растения
             return new_catalog_item, None
             
         except Exception as e:
@@ -72,15 +68,13 @@ class PlantService:
             return None, f"Ошибка при обновлении справочника: {str(e)}."
 
     @staticmethod
-    def confirm_and_create_plant(db: Session, user_id: int, catalog_data: dict, custom_name: str = None, image_bytes: bytes = None):
+    def confirm_and_create_plant(db: Session, user_id: int, catalog_data: dict, custom_name: str = None, image_bytes: bytes = None, height: float = 10.0):
         """
         Регистрация растения в коллекции. 
-        Создает запись в Plant и инициализирует первую задачу в CareCalendar на СЕГОДНЯ.
         """
         species_name = catalog_data.get('species_name')
         catalog_item = db.query(PlantCatalog).filter_by(species_name=species_name).first()
         
-        # Если вида нет (защитный механизм), создаем его из переданных данных
         if not catalog_item:
             try:
                 catalog_item = PlantCatalog(
@@ -96,7 +90,7 @@ class PlantService:
                 db.rollback()
                 return None, "Ошибка при создании нового вида в справочнике."
 
-        # Сохранение и оптимизация фото
+        # Сохранение фото
         image_url = FileService.process_and_save(image_bytes, subfolder="plants")
 
         new_plant = Plant(
@@ -105,7 +99,8 @@ class PlantService:
             custom_name=custom_name or catalog_item.species_name,
             image_url=image_url,
             last_watered_at=datetime.now(),
-            status_text="Здорово",
+            user_light_level=catalog_data.get('light_level', 0.5),
+            status_text=f"Рост: {height} см",
             is_active=True
         )
         
@@ -113,8 +108,16 @@ class PlantService:
             db.add(new_plant)
             db.flush() 
 
-            # ПЛАНИРОВАНИЕ ПЕРВОЙ ЗАДАЧИ НА СЕГОДНЯ
-            # Чтобы в профиле сразу появилась кнопка "Выполнено"
+            # 1. Запись в журнал роста
+            new_log = GrowthLog(
+                plant_id=new_plant.plant_id, 
+                height=height, 
+                note="Первоначальная посадка",
+                measured_at=date.today()
+            )
+            db.add(new_log)
+
+            # 2. Планирование первой задачи
             db.add(CareCalendar(
                 plant_id=new_plant.plant_id, 
                 task_type="watering", 
@@ -122,8 +125,10 @@ class PlantService:
                 is_completed=False
             ))
             
-            db.commit()
+            # ФИНАЛЬНЫЙ КОММИТ
+            db.commit() 
             db.refresh(new_plant)
+            
             return new_plant, None
         except Exception as e:
             db.rollback()
@@ -131,7 +136,6 @@ class PlantService:
 
     @staticmethod
     def add_measurement(db: Session, plant_id: int, height: float, note: str = "", image_bytes: bytes = None):
-        """Запись данных о физическом развитии (GrowthLog)."""
         image_path = FileService.process_and_save(image_bytes, subfolder="logs")
         
         new_log = GrowthLog(plant_id=plant_id, height=height, note=note, image_path=image_path)
@@ -150,7 +154,6 @@ class PlantService:
 
     @staticmethod
     def archive_plant(db: Session, plant_id: int, reason: str = "убрано"):
-        """Перевод растения в архив и удаление активных задач."""
         plant = db.query(Plant).get(plant_id)
         if not plant: return None, "Растение не найдено."
 
@@ -158,7 +161,6 @@ class PlantService:
             plant.is_active = False
             plant.status_text = f"В архиве ({reason})"
             
-            # Чистим календарь от невыполненных задач этого растения
             db.query(CareCalendar).filter(
                 CareCalendar.plant_id == plant_id, 
                 CareCalendar.is_completed == False
@@ -180,7 +182,6 @@ class PlantService:
 
     @staticmethod
     def delete_plant_permanently(db: Session, plant_id: int):
-        """Полное удаление растения и его фото с диска."""
         plant = db.query(Plant).get(plant_id)
         if not plant: return False, "Растение не найдено."
 
@@ -188,7 +189,7 @@ class PlantService:
         try:
             db.delete(plant)
             db.commit()
-
+            
             if image_path:
                 full_path = os.path.join(Config.UPLOAD_DIR, image_path)
                 if os.path.exists(full_path):
