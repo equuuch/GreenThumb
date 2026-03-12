@@ -4,6 +4,7 @@ from database.models import Plant, CareCalendar
 from sqlalchemy.orm import joinedload
 from datetime import datetime
 import time
+from services.plant_services import PlantService
 
 def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
     view = ft.View()
@@ -73,7 +74,6 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
             try:
                 h_val = float(height_input.value.replace(",", "."))
                 with next(get_db()) as db:
-                    from services.plant_services import PlantService
                     log, err = PlantService.add_measurement(
                         db=db, plant_id=plant_id, height=h_val, note=note_input.value
                     )
@@ -103,7 +103,7 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
         page.bottom_sheet.open = True
         page.update()
 
-    # --- ЛОГИКА РЕДАКТИРОВАНИЯ ---
+    # --- ЛОГИКА РЕДАКТИРОВАНИЯ И АРХИВАЦИИ ---
     def show_edit_sheet(e):
         name_input = ft.TextField(label="Название", value=p_custom_name, border_color="#009753")
         light_slider = ft.Slider(min=0, max=1, divisions=10, value=light_val, active_color="#FFC107")
@@ -119,15 +119,37 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
             page.update()
             nav(f"/my_plant_details/{plant_id}") 
 
+        def handle_archive(e):
+            with next(get_db()) as db:
+                success, err = PlantService.archive_plant(db, plant_id, reason="убрано пользователем")
+                if success:
+                    page.bottom_sheet.open = False
+                    page.snack_bar = ft.SnackBar(ft.Text("Растение перенесено в архив"), bgcolor="#455A64")
+                    page.snack_bar.open = True
+                    page.update()
+                    time.sleep(1)
+                    nav("/my_plants")
+
         page.bottom_sheet = ft.BottomSheet(
             ft.Container(
                 padding=30, bgcolor="white",
+                border_radius=ft.border_radius.only(top_left=20, top_right=20),
                 content=ft.Column([
-                    ft.Text("Редактирование", size=20, weight="bold"),
+                    ft.Row([
+                        ft.Text("Редактирование", size=20, weight="bold"),
+                        ft.IconButton(ft.Icons.CLOSE, on_click=lambda _: setattr(page.bottom_sheet, "open", False))
+                    ], alignment="spaceBetween"),
                     name_input,
                     ft.Text("Освещенность", size=14, color="grey"),
                     light_slider,
-                    ft.ElevatedButton("Сохранить", on_click=save_changes, bgcolor="#009753", color="white", width=float("inf"))
+                    ft.ElevatedButton("Сохранить изменения", on_click=save_changes, bgcolor="#009753", color="white", width=float("inf"), height=50),
+                    ft.TextButton(
+                        icon=ft.Icons.ARCHIVE_OUTLINED,
+                        icon_color="red-400",
+                        content=ft.Text("Перенести в архив", color="red-400"),
+                        on_click=handle_archive,
+                        width=float("inf")
+                    )
                 ], tight=True, spacing=15)
             )
         )
@@ -184,7 +206,6 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
         ft.Container(
             padding=ft.padding.only(top=40, left=15, right=15),
             content=ft.Row([
-                # ЧЕРНЫЕ ИКОНКИ
                 ft.IconButton(ft.Icons.ARROW_BACK_IOS_NEW, icon_color="black", bgcolor="white70", on_click=lambda _: nav("/my_plants")),
                 ft.IconButton(ft.Icons.EDIT_OUTLINED, icon_color="black", bgcolor="white70", on_click=show_edit_sheet)
             ], alignment="spaceBetween")
@@ -207,12 +228,10 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
             
             ft.Divider(height=40, color="transparent"),
             
-            # ВЛАГА И ЗДОРОВЬЕ ТЕПЕРЬ ВСЕГДА ВМЕСТЕ
             create_stat("Уровень влаги", ft.Icons.WATER_DROP_OUTLINED, water_val, water_bar_fill, water_bar_empty),
             create_stat("Состояние здоровья", ft.Icons.FAVORITE_OUTLINE, health_val),
             create_stat("Уровень света", ft.Icons.WB_SUNNY_OUTLINED, light_val),
             
-            # Блок замеров
             ft.Container(
                 content=ft.Row([
                     ft.Column([
