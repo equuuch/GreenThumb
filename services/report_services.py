@@ -1,30 +1,43 @@
 from sqlalchemy.orm import Session
 from database.models import Plant, CareCalendar, GrowthLog
+from datetime import datetime
 
 class ReportService:
     @staticmethod
     def collect_plant_data(db: Session, plant_id: int):
-        # сбор данных для генератора pdf. 
-        # исправлено обращение к связи catalog_info согласно модели.
         plant = db.query(Plant).get(plant_id)
         if not plant:
             return None
 
+        # Собираем логи роста
         logs = db.query(GrowthLog).filter(GrowthLog.plant_id == plant_id).order_by(GrowthLog.measured_at).all()
+        
         start_h = float(logs[0].height) if logs else 0
-        end_h = float(logs[-1].height) if logs else 0
+        current_h = float(logs[-1].height) if logs else 0
+        growth_delta = current_h - start_h if logs else 0
 
+        # Считаем дисциплину ухода (за все время)
         tasks = db.query(CareCalendar).filter(CareCalendar.plant_id == plant_id).all()
-        completed = [t for t in tasks if t.is_completed]
-        discipline = (len(completed) / len(tasks) * 100) if tasks else 0
+        total_tasks = len(tasks)
+        completed_tasks = len([t for t in tasks if t.is_completed])
+        discipline_score = int((completed_tasks / total_tasks * 100)) if total_tasks > 0 else 100
+
+        # Формируем авто-рекомендацию
+        advice = "Растение развивается стабильно."
+        if discipline_score < 70:
+            advice = "Внимательнее соблюдайте график полива для лучшего роста."
+        if growth_delta <= 0 and len(logs) > 1:
+            advice = "Рост замедлился. Возможно, стоит обновить грунт или добавить удобрения."
 
         return {
             "name": plant.custom_name,
-            "species": plant.catalog_info.species_name, # исправлено
-            "latin": plant.catalog_info.latin_name,    # исправлено
+            "species": plant.catalog_info.species_name if plant.catalog_info else "Не определено",
+            "latin": plant.catalog_info.latin_name if plant.catalog_info else "-",
             "added_at": plant.added_at.strftime("%d.%m.%Y"),
-            "last_water": plant.last_watered_at.strftime("%d.%m.%Y") if plant.last_watered_at else "нет",
-            "growth_data": {"start": start_h, "current": end_h, "delta": round(end_h - start_h, 2)},
-            "care_data": {"total": len(tasks), "done": len(completed), "score": round(discipline, 1)},
-            "history": logs 
+            "current_height": f"{current_h} см",
+            "growth_delta": f"+{growth_delta} см" if growth_delta > 0 else f"{growth_delta} см",
+            "discipline_score": f"{discipline_score}%",
+            "total_tasks": total_tasks,
+            "advice": advice,
+            "report_date": datetime.now().strftime("%d.%m.%Y %H:%M")
         }

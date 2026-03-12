@@ -186,7 +186,6 @@ def CatalogView(page: ft.Page, nav, user_state):
         )
     ])
 
-    # Первоначальный запуск
     load_catalog()
 
     return view

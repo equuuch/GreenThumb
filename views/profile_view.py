@@ -2,9 +2,12 @@ import flet as ft
 from database.session import SessionLocal
 from database.models import User, Plant, CareCalendar
 from services.care_service import CareService
+from services.report_services import ReportService
+from services.export_services import ExportService
 from sqlalchemy import desc, asc
 from sqlalchemy.orm import joinedload
 from datetime import datetime, date
+import time
 
 def ProfileView(page: ft.Page, nav, user_state):
     view = ft.View()
@@ -15,17 +18,46 @@ def ProfileView(page: ft.Page, nav, user_state):
     u_id = user_state.get("id", 1)
 
     # --- ОБРАБОТЧИКИ СОБЫТИЙ ---
+    
     def handle_logout(e):
         user_state["id"] = None
         user_state["name"] = "Гость"
         page.go("/")
+
+    def handle_report_request(e, plant_id):
+        # Визуальная индикация загрузки на кнопке
+        e.control.disabled = True
+        e.control.content = ft.ProgressRing(width=16, height=16, stroke_width=2, color="#009753")
+        page.update()
+
+        try:
+            with SessionLocal() as db:
+                # 1. Сбор данных через сервис
+                data = ReportService.collect_plant_data(db, plant_id)
+                if data:
+                    # 2. Генерация PDF
+                    pdf_path = ExportService.create_plant_pdf(data)
+                    page.snack_bar = ft.SnackBar(
+                        ft.Text(f"Отчет успешно создан в папке reports"), 
+                        bgcolor="#009753"
+                    )
+                else:
+                    page.snack_bar = ft.SnackBar(ft.Text("Ошибка: данные растения не найдены"), bgcolor="red")
+        except Exception as ex:
+            page.snack_bar = ft.SnackBar(ft.Text(f"Ошибка генерации: {str(ex)}"), bgcolor="red")
+        
+        # Возвращаем кнопку в исходное состояние
+        e.control.disabled = False
+        e.control.content = None 
+        page.snack_bar.open = True
+        page.update()
 
     def handle_complete_task(e, task_id):
         db = SessionLocal()
         try:
             new_task, error = CareService.complete_task(db, task_id)
             if not error:
-                page.go("/profile") 
+                nav("/profile") 
             else:
                 print(f"Ошибка при выполнении задачи: {error}")
         finally:
@@ -39,7 +71,7 @@ def ProfileView(page: ft.Page, nav, user_state):
                 plant.is_active = True
                 db.commit()
                 CareService.generate_full_schedule(db, plant_id)
-                page.go("/user_home") 
+                nav("/profile") 
         finally:
             db.close()
 
@@ -69,7 +101,8 @@ def ProfileView(page: ft.Page, nav, user_state):
     finally:
         db.close()
 
-    # --- UI: ШАПКА ПРОФИЛЯ ---
+    # --- UI КОМПОНЕНТЫ ---
+    
     def stat_column(label, value):
         return ft.Container(
             content=ft.Column([
@@ -79,7 +112,7 @@ def ProfileView(page: ft.Page, nav, user_state):
             on_click=lambda _: nav("/analytics"),
             padding=10,
             border_radius=10,
-            ink=True # Эффект нажатия
+            ink=True
         )
 
     profile_header = ft.Container(
@@ -110,7 +143,68 @@ def ProfileView(page: ft.Page, nav, user_state):
         ])
     )
 
-    # --- UI: КАЛЕНДАРЬ УХОДА ---
+    def create_plant_card(p, is_arc):
+        p_img = p.image_url.replace("\\", "/") if p.image_url else None
+        
+        # Кнопки действий в правой части карточки
+        actions = ft.Row(spacing=0)
+        if is_arc:
+            actions.controls.append(
+                ft.IconButton(
+                    ft.Icons.UNARCHIVE_ROUNDED, 
+                    icon_color="#009753", 
+                    on_click=lambda e: restore_from_archive(e, p.plant_id)
+                )
+            )
+        else:
+            # Кнопка генерации отчета
+            actions.controls.append(
+                ft.IconButton(
+                    icon=ft.Icons.PICTURE_AS_PDF_ROUNDED,
+                    icon_color="grey500",
+                    icon_size=20,
+                    tooltip="Скачать PDF отчет",
+                    on_click=lambda e: handle_report_request(e, p.plant_id)
+                )
+            )
+            actions.controls.append(ft.Icon(ft.Icons.CHEVRON_RIGHT, color="grey400"))
+
+        return ft.Container(
+            bgcolor="white", padding=15, border_radius=22,
+            shadow=ft.BoxShadow(blur_radius=5, color=ft.Colors.BLACK12),
+            content=ft.Row([
+                ft.Image(
+                    src=f"assets/{p_img}" if p_img else "assets/aloe.png", 
+                    width=50, height=50, fit="cover", border_radius=12
+                ),
+                ft.Column([
+                    ft.Text(p.custom_name, weight="bold", color="black", size=15),
+                    ft.Text("В архиве" if is_arc else (p.status_text or "Здорово"), size=12, color="grey")
+                ], expand=True, spacing=2),
+                actions
+            ]),
+            on_click=None if is_arc else lambda _: nav(f"/my_plant_details/{p.plant_id}")
+        )
+
+    # --- СПИСКИ РАСТЕНИЙ ---
+    active_list_col = ft.Column(spacing=12, visible=True)
+    archive_list_col = ft.Column(spacing=12, visible=False)
+
+    for p in active_plants: active_list_col.controls.append(create_plant_card(p, False))
+    for p in archived_plants: archive_list_col.controls.append(create_plant_card(p, True))
+
+    def on_tab_change(e):
+        active_list_col.visible = (e.control.selected_index == 0)
+        archive_list_col.visible = (e.control.selected_index == 1)
+        view.update()
+
+    tabs = ft.Tabs(
+        selected_index=0, 
+        on_change=on_tab_change, 
+        tabs=[ft.Tab(text="Мой сад"), ft.Tab(text="Архив")]
+    )
+
+    # --- КАЛЕНДАРЬ ---
     calendar_list = ft.Column(spacing=10)
     if not tasks:
         calendar_list.controls.append(ft.Text("На сегодня задач нет ✨", size=13, color="grey", italic=True))
@@ -137,37 +231,7 @@ def ProfileView(page: ft.Page, nav, user_state):
                 )
             )
 
-    # --- UI: СПИСКИ И АРХИВ ---
-    active_list_col = ft.Column(spacing=12, visible=True)
-    archive_list_col = ft.Column(spacing=12, visible=False)
-
-    def create_plant_card(p, is_arc):
-        p_img = p.image_url.replace("\\", "/") if p.image_url else None
-        return ft.Container(
-            bgcolor="white", padding=15, border_radius=22,
-            shadow=ft.BoxShadow(blur_radius=5, color=ft.Colors.BLACK12),
-            content=ft.Row([
-                ft.Image(src=f"assets/{p_img}" if p_img else "assets/aloe.png", width=50, height=50, fit="cover", border_radius=12),
-                ft.Column([
-                    ft.Text(p.custom_name, weight="bold", color="black", size=15),
-                    ft.Text("В архиве" if is_arc else (p.status_text or "Здорово"), size=12, color="grey")
-                ], expand=True, spacing=2),
-                ft.IconButton(ft.Icons.UNARCHIVE_ROUNDED, icon_color="#009753", on_click=lambda e: restore_from_archive(e, p.plant_id)) if is_arc else ft.Icon(ft.Icons.CHEVRON_RIGHT, color="grey400")
-            ]),
-            on_click=None if is_arc else lambda _: nav(f"/my_plant_details/{p.plant_id}")
-        )
-
-    for p in active_plants: active_list_col.controls.append(create_plant_card(p, False))
-    for p in archived_plants: archive_list_col.controls.append(create_plant_card(p, True))
-
-    def on_tab_change(e):
-        active_list_col.visible = (e.control.selected_index == 0)
-        archive_list_col.visible = (e.control.selected_index == 1)
-        view.update()
-
-    tabs = ft.Tabs(selected_index=0, on_change=on_tab_change, tabs=[ft.Tab(text="Мой сад"), ft.Tab(text="Архив")])
-
-    # --- СБОРКА КОНТЕНТА ---
+    # --- ФИНАЛЬНАЯ СБОРКА ---
     main_content = ft.Column(
         scroll=ft.ScrollMode.ADAPTIVE,
         expand=True,
@@ -176,7 +240,6 @@ def ProfileView(page: ft.Page, nav, user_state):
             ft.Container(
                 padding=20,
                 content=ft.Column([
-                    # ИСПРАВЛЕННЫЙ БЛОК АНАЛИТИКИ (Container вместо прямого ListTile)
                     ft.Container(
                         content=ft.ListTile(
                             leading=ft.Icon(ft.Icons.INSERT_CHART_ROUNDED, color="#009753"),

@@ -1,71 +1,67 @@
 import os
-from datetime import datetime
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.styles import ParagraphStyle
 from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont, TTFError
+from reportlab.pdfbase.ttfonts import TTFont
 from config import Config
+from datetime import datetime
 
 class ExportService:
     @staticmethod
-    def _init_pdf_engine():
-        # поиск файла шрифта. 
-        # мы проверяем наличие файла DejaVuSans.ttf в папке assets/fonts. 
-        # если файл найден, регистрируем его в системе reportlab под именем 'DejaVu'.
-        font_path = os.path.join(Config.FONTS_DIR, "DejaVuSans.ttf")
-        
-        if os.path.exists(font_path):
-            try:
-                pdfmetrics.registerFont(TTFont('DejaVu', font_path))
-                return 'DejaVu'
-            except Exception as e:
-                print(f"предупреждение: ошибка регистрации шрифта: {e}")
-                return 'Helvetica'
-        
-        print(f"предупреждение: шрифт не найден по пути {font_path}")
-        return 'Helvetica'
-
-    @staticmethod
     def create_plant_pdf(data: dict) -> str:
-        # создание директории отчетов, если она отсутствует
         if not os.path.exists(Config.REPORTS_DIR):
-            os.makedirs(Config.REPORTS_DIR, exist_ok=True)
+            os.makedirs(Config.REPORTS_DIR)
 
-        filename = f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
-        filepath = os.path.join(Config.REPORTS_DIR, filename)
+        file_name = f"Report_{data['name']}_{datetime.now().strftime('%Y%m%d')}.pdf"
+        file_path = os.path.join(Config.REPORTS_DIR, file_name)
+
+        doc = SimpleDocTemplate(file_path, pagesize=A4)
         
-        font_name = ExportService._init_pdf_engine()
-        doc = SimpleDocTemplate(filepath, pagesize=A4)
+        # Регистрируем шрифт для поддержки кириллицы
+        font_path = os.path.join(Config.FONTS_DIR, "DejaVuSans.ttf")
+        pdfmetrics.registerFont(TTFont('DejaVu', font_path))
         
-        rus_style = ParagraphStyle('RusNormal', fontName=font_name, fontSize=10, leading=12)
-        title_style = ParagraphStyle('RusTitle', fontName=font_name, fontSize=16, leading=20, alignment=1, spaceAfter=20)
+        styles = {
+            'Title': ParagraphStyle('Title', fontName='DejaVu', fontSize=18, alignment=1, spaceAfter=20),
+            'Normal': ParagraphStyle('Normal', fontName='DejaVu', fontSize=10, leading=14),
+            'Heading': ParagraphStyle('Heading', fontName='DejaVu', fontSize=12, weight='bold', spaceBefore=10),
+            'Advice': ParagraphStyle('Advice', fontName='DejaVu', fontSize=11, leftIndent=20, italic=True, color=colors.darkgreen)
+        }
 
-        elements = [Paragraph(f"ОТЧЕТ ПО РАСТЕНИЮ: {data['name'].upper()}", title_style)]
+        elements = []
 
+        # Заголовок
+        elements.append(Paragraph(f"Отчет по растению: {data['name']}", styles['Title']))
+        elements.append(Paragraph(f"Сформирован: {data['report_date']}", styles['Normal']))
+        elements.append(Spacer(1, 12))
+
+        # Основная таблица данных
         table_data = [
-            [Paragraph("Характеристика", rus_style), Paragraph("Значение", rus_style)],
-            [Paragraph("Вид", rus_style), Paragraph(data['species'], rus_style)],
-            [Paragraph("Латынь", rus_style), Paragraph(data['latin'], rus_style)],
-            [Paragraph("Дисциплина полива", rus_style), Paragraph(f"{data['care_data']['score']}%", rus_style)],
-            [Paragraph("Общий рост", rus_style), Paragraph(f"{data['growth_data']['delta']} см", rus_style)]
+            [Paragraph("Параметр", styles['Normal']), Paragraph("Значение", styles['Normal'])],
+            ["Вид:", data['species']],
+            ["Латынь:", data['latin']],
+            ["Дата добавления:", data['added_at']],
+            ["Текущий рост:", data['current_height']],
+            ["Прогресс роста:", data['growth_delta']],
+            ["Дисциплина ухода:", data['discipline_score']],
         ]
 
-        main_table = Table(table_data, colWidths=[150, 250])
-        main_table.setStyle(TableStyle([
-            ('GRID', (0,0), (-1,-1), 1, colors.black),
-            ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
-            ('FONTNAME', (0,0), (-1,-1), font_name),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('LEFTPADDING', (0,0), (-1,-1), 10),
+        t = Table(table_data, colWidths=[150, 250])
+        t.setStyle(TableStyle([
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.lightgreen),
+            ('FONTNAME', (0, 0), (-1, -1), 'DejaVu'),
+            ('PADDING', (0, 0), (-1, -1), 6),
         ]))
-        elements.append(main_table)
+        elements.append(t)
+        
+        # Блок рекомендаций
+        elements.append(Spacer(1, 20))
+        elements.append(Paragraph("Анализ и рекомендации агронома:", styles['Heading']))
+        elements.append(Spacer(1, 5))
+        elements.append(Paragraph(data['advice'], styles['Advice']))
 
-        try:
-            doc.build(elements)
-            # возвращаем полный путь к файлу для корректной проверки в тестах
-            return filepath
-        except Exception as e:
-            print(f"ошибка при сборке pdf документа: {e}")
-            return ""
+        doc.build(elements)
+        return file_path
