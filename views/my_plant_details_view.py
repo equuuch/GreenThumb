@@ -42,6 +42,7 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
             water_val = max(0.0, min(1.0, 1.0 - (diff_sec / interval_sec)))
 
         light_val = p_user_light if p_user_light is not None else p_def_light
+        # Здоровье напрямую завязано на влагу
         health_val = 1.0 if water_val > 0.2 else 0.4
 
     # --- ЭЛЕМЕНТЫ ШКАЛЫ ---
@@ -56,7 +57,7 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
     # --- ЛОГИКА ДОБАВЛЕНИЯ ЗАМЕРА ---
     def open_growth_sheet(e):
         height_input = ft.TextField(
-            label="Высота растения (см)", 
+            label="Высота (см)", 
             keyboard_type=ft.KeyboardType.NUMBER,
             border_color="#009753",
             focused_border_color="#004D40"
@@ -183,8 +184,9 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
         ft.Container(
             padding=ft.padding.only(top=40, left=15, right=15),
             content=ft.Row([
-                ft.IconButton(ft.Icons.ARROW_BACK_IOS_NEW, bgcolor="white70", on_click=lambda _: nav("/my_plants")),
-                ft.IconButton(ft.Icons.EDIT_OUTLINED, bgcolor="white70", on_click=show_edit_sheet)
+                # ЧЕРНЫЕ ИКОНКИ
+                ft.IconButton(ft.Icons.ARROW_BACK_IOS_NEW, icon_color="black", bgcolor="white70", on_click=lambda _: nav("/my_plants")),
+                ft.IconButton(ft.Icons.EDIT_OUTLINED, icon_color="black", bgcolor="white70", on_click=show_edit_sheet)
             ], alignment="spaceBetween")
         )
     ])
@@ -205,10 +207,12 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
             
             ft.Divider(height=40, color="transparent"),
             
+            # ВЛАГА И ЗДОРОВЬЕ ТЕПЕРЬ ВСЕГДА ВМЕСТЕ
             create_stat("Уровень влаги", ft.Icons.WATER_DROP_OUTLINED, water_val, water_bar_fill, water_bar_empty),
+            create_stat("Состояние здоровья", ft.Icons.FAVORITE_OUTLINE, health_val),
             create_stat("Уровень света", ft.Icons.WB_SUNNY_OUTLINED, light_val),
             
-            # НОВЫЙ БЛОК: История роста
+            # Блок замеров
             ft.Container(
                 content=ft.Row([
                     ft.Column([
