@@ -10,12 +10,12 @@ from views.auth_view import AuthView
 from views.scanner_view import ScannerView
 from views.profile_view import ProfileView
 from views.reference_view import ReferenceView
-from views.reference_detail_view import ReferenceDetailView  # Новая вьюха без картинок
+from views.reference_detail_view import ReferenceDetailView
 from views.analytics_view import AnalyticsView
 from views.my_plant_details_view import MyPlantDetailsView
 from views.details_view import DetailsView
 from views.search_view import SearchView
-from views.calendar_view import CalendarView 
+from views.calendar_view import CalendarView
 from views.notifications_view import NotificationsView
 from views.catalog_view import CatalogView 
 
@@ -43,13 +43,10 @@ def main(page: ft.Page):
     page.bgcolor = "white"
     page.padding = 0
     
-    # Регистрация шрифта Manrope
-    page.fonts = {
-        "Manrope": "https://github.com/google/fonts/raw/main/ofl/manrope/Manrope%5Bwght%5D.ttf"
-    }
+    # УДАЛЕНО: Регистрация Manrope и настройки весов в Theme
+    page.fonts = {} 
 
     page.theme = ft.Theme(
-        font_family="Manrope",
         page_transitions=ft.PageTransitionsTheme(
             android="fadeThrough",
             ios="cupertino",
@@ -77,9 +74,6 @@ def main(page: ft.Page):
         v = None
         
         # 1. Логика выбора вьюхи
-        # --- ДИНАМИЧЕСКИЕ РОУТЫ ---
-        
-        # С картинкой (для главной)
         if page.route.startswith("/reference/"):
             try:
                 catalog_id = int(page.route.split("/")[-1])
@@ -89,7 +83,6 @@ def main(page: ft.Page):
                 page.go("/catalog")
                 return
 
-        # БЕЗ картинки (для каталога)
         elif page.route.startswith("/reference_detail/"):
             try:
                 catalog_id = int(page.route.split("/")[-1])
@@ -115,7 +108,6 @@ def main(page: ft.Page):
             is_register = "?mode=register" in page.route
             v = AuthView(page, navigate, USER_STATE, is_register_mode=is_register)
 
-        # --- СТАТИЧЕСКИЕ РОУТЫ ---
         elif page.route == "/user_home":
             v = UserHomeView(page, navigate, USER_STATE)
         
@@ -159,8 +151,6 @@ def main(page: ft.Page):
 
         # 3. Привязка NavBar
         hide_nav_on = ["/", "/auth", "/analytics", "/details", "/search", "/add_plant", "/catalog"]
-        
-        # Определяем, является ли вьюха страницей деталей (не показываем на них навбар)
         is_details = (
             page.route.startswith("/reference/") or 
             page.route.startswith("/reference_detail/") or 

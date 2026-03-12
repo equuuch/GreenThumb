@@ -4,20 +4,18 @@ from database.models import PlantCatalog
 from sqlalchemy import select
 
 def CatalogView(page: ft.Page, nav, user_state):
-    # Создаем объект вьюхи с привязкой к роуту
     view = ft.View(
         route="/catalog",
-        bgcolor="#F9F9F9",
+        bgcolor="#F5F7F6", # Чуть более "растительный" серый оттенок
         padding=0
     )
 
-    # --- Верхняя панель (AppBar) ---
     view.controls.append(
         ft.AppBar(
-            title=ft.Text("Справочник растений", size=20, weight="bold"),
+            title=ft.Text("Справочник", size=20, weight="bold", font_family="Manrope"),
             bgcolor="white",
-            center_title=False,
-            elevation=0, # Плоский дизайн
+            center_title=True,
+            elevation=0,
             leading=ft.IconButton(
                 icon=ft.Icons.ARROW_BACK_IOS_NEW_ROUNDED,
                 icon_color="black",
@@ -27,85 +25,90 @@ def CatalogView(page: ft.Page, nav, user_state):
         )
     )
 
-    # Контейнер для списка карточек
-    catalog_list = ft.Column(spacing=15, scroll=ft.ScrollMode.ADAPTIVE)
+    # Используем GridView для двух колонок
+    catalog_grid = ft.GridView(
+        expand=True,
+        runs_count=2, # 2 колонки
+        max_extent=200, # Максимальная ширина одной карточки
+        child_aspect_ratio=0.75, # Соотношение сторон (высокая карточка)
+        spacing=15,
+        run_spacing=15,
+    )
 
-    # Загрузка данных из базы
     with next(get_db()) as db:
-        # Получаем все растения из каталога, сортируем по алфавиту
         items = db.scalars(select(PlantCatalog).order_by(PlantCatalog.species_name)).all()
 
         if not items:
-            catalog_list.controls.append(
+            view.controls.append(
                 ft.Container(
-                    content=ft.Text("Справочник пока пуст", color="grey", size=16),
-                    alignment=ft.alignment.center,
-                    padding=50
+                    content=ft.Text("Справочник пуст", color="grey"),
+                    alignment=ft.alignment.center, expand=True
                 )
             )
         else:
             for item in items:
-                # Создаем карточку растения
-                catalog_list.controls.append(
-                    ft.Container(
-                        bgcolor="white",
-                        padding=20,
-                        border_radius=20,
-                        shadow=ft.BoxShadow(blur_radius=10, color="black10"),
-                        ink=True, 
-                        # ИСПРАВЛЕНО: ведем на reference_detail, чтобы открылось БЕЗ картинки
-                        on_click=lambda e, cid=item.catalog_id: nav(f"/reference_detail/{cid}"),
-                        content=ft.Column([
-                            ft.Row([
-                                ft.Column([
-                                    ft.Text(
-                                        item.species_name, 
-                                        size=18, 
-                                        weight="bold", 
-                                        color="black"
-                                    ),
-                                    ft.Text(
-                                        item.latin_name if item.latin_name else "", 
-                                        size=14, 
-                                        italic=True, 
-                                        color="grey600"
-                                    ),
-                                ], expand=True),
-                                ft.Icon(ft.Icons.CHEVRON_RIGHT, color="grey400")
-                            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                            
-                            ft.Divider(height=20, color="#F5F5F5"),
-                            
-                            ft.Row([
-                                # Характеристика: Полив
-                                ft.Row([
-                                    ft.Icon(ft.Icons.WATER_DROP, size=16, color="#009753"),
-                                    ft.Text(f"Раз в {item.default_watering_interval} дн.", size=12)
-                                ], spacing=5),
-                                # Характеристика: Свет
-                                ft.Row([
-                                    ft.Icon(ft.Icons.WB_SUNNY, size=16, color="#FFC107"),
-                                    ft.Text(f"{int((item.default_light_level or 0) * 100)}% света", size=12)
-                                ], spacing=5),
-                            ], spacing=20),
-                            
-                            # Короткое описание (максимум 2 строки)
+                # Компактная карточка
+                card = ft.Container(
+                    bgcolor="white",
+                    border_radius=20,
+                    padding=12,
+                    ink=True,
+                    on_click=lambda e, cid=item.catalog_id: nav(f"/reference_detail/{cid}"),
+                    shadow=ft.BoxShadow(blur_radius=15, color=ft.Colors.with_opacity(0.05, "black")),
+                    content=ft.Column([
+                        # Верхняя часть: Иконка или сокращенное название в круге
+                        ft.Container(
+                            content=ft.Icon(ft.Icons.ECO, color="#009753", size=30),
+                            width=50,
+                            height=50,
+                            bgcolor="#E8F5E9",
+                            border_radius=15,
+                            alignment=ft.alignment.center,
+                        ),
+                        
+                        ft.Container(height=5),
+                        
+                        # Названия
+                        ft.Text(
+                            item.species_name, 
+                            size=15, 
+                            weight="bold", 
+                            max_lines=1, 
+                            overflow=ft.TextOverflow.ELLIPSIS
+                        ),
+                        ft.Text(
+                            item.latin_name if item.latin_name else "Plant", 
+                            size=11, 
+                            italic=True, 
+                            color="#9E9E9E",
+                            max_lines=1
+                        ),
+                        
+                        ft.Divider(height=10, color="#F5F5F5"),
+                        
+                        # Компактные характеристики
+                        ft.Row([
+                            ft.Icon(ft.Icons.WATER_DROP, size=12, color="#009753"),
+                            ft.Text(f"{item.default_watering_interval} дн.", size=11, weight="w500"),
+                        ], spacing=4),
+                        
+                        ft.Row([
+                            ft.Icon(ft.Icons.WB_SUNNY_ROUNDED, size=12, color="#FFC107"),
                             ft.Text(
-                                item.description if item.description else "Описание скоро появится",
-                                size=13,
-                                color="grey700",
-                                max_lines=2,
-                                overflow=ft.TextOverflow.ELLIPSIS
-                            )
-                        ], spacing=8)
-                    )
-                )
+                                "Яркий" if (item.default_light_level or 0) > 0.6 else "Тень", 
+                                size=11, 
+                                weight="w500"
+                            ),
+                        ], spacing=4),
 
-    # Добавляем список на страницу с отступами
+                    ], spacing=4, horizontal_alignment=ft.CrossAxisAlignment.START)
+                )
+                catalog_grid.controls.append(card)
+
     view.controls.append(
         ft.Container(
-            content=catalog_list,
-            padding=20,
+            content=catalog_grid,
+            padding=15,
             expand=True
         )
     )
