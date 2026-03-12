@@ -3,7 +3,7 @@ from database.session import get_db
 from database.models import PlantCatalog
 from sqlalchemy import select
 from services.plant_services import PlantService
-from services.ai_services import GigaChatService  # Твоя структура папок
+from services.ai_services import GigaChatService
 
 def CatalogView(page: ft.Page, nav, user_state):
     # 1. Инициализация
@@ -16,8 +16,8 @@ def CatalogView(page: ft.Page, nav, user_state):
         padding=0
     )
 
-    # 2. Объявление UI-компонентов (СНАЧАЛА объявляем, чтобы избежать ошибок "not defined")
-    
+    # --- UI-КОМПОНЕНТЫ ---
+
     # Сетка карточек
     catalog_grid = ft.GridView(
         expand=True,
@@ -28,19 +28,7 @@ def CatalogView(page: ft.Page, nav, user_state):
         run_spacing=15,
     )
 
-    # Поле поиска (нужно объявить заранее, так как оно используется в функциях)
-    search_field = ft.TextField(
-        hint_text="Найти растение...",
-        expand=True,
-        border_radius=15,
-        bgcolor="#F0F2F1",
-        border_color="transparent",
-        height=45,
-        content_padding=ft.padding.only(left=15),
-        on_change=lambda e: load_catalog(e.control.value),
-    )
-
-    # Состояние "Пусто" / Кнопка для поиска через ИИ
+    # Состояние "Пусто"
     empty_state = ft.Column([
         ft.Container(height=40),
         ft.Icon(ft.Icons.SEARCH_OFF_ROUNDED, size=50, color="grey"),
@@ -52,6 +40,18 @@ def CatalogView(page: ft.Page, nav, user_state):
             style=ft.ButtonStyle(bgcolor="#009753", color="white")
         )
     ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, visible=False)
+
+    # Поле поиска
+    search_field = ft.TextField(
+        hint_text="Найти растение...",
+        expand=True,
+        border_radius=15,
+        bgcolor="#F0F2F1",
+        border_color="transparent",
+        height=45,
+        content_padding=ft.padding.only(left=15),
+        on_change=lambda e: load_catalog(e.control.value),
+    )
 
     # --- ЛОГИКА ---
 
@@ -84,6 +84,7 @@ def CatalogView(page: ft.Page, nav, user_state):
         """Загрузка и фильтрация списка из локальной БД"""
         catalog_grid.controls.clear()
         with next(get_db()) as db:
+            # Делаем свежий запрос к базе
             stmt = select(PlantCatalog).order_by(PlantCatalog.species_name)
             items = db.scalars(stmt).all()
             
@@ -92,8 +93,19 @@ def CatalogView(page: ft.Page, nav, user_state):
             for item in filtered:
                 catalog_grid.controls.append(create_card(item))
             
-            # Если поиск не дал результатов, показываем кнопку поиска через ИИ
             empty_state.visible = len(catalog_grid.controls) == 0
+        
+        if page:
+            page.update()
+
+    def show_msg(text, is_error=False):
+        """Новый способ отображения SnackBar"""
+        snack = ft.SnackBar(
+            content=ft.Text(text),
+            bgcolor="red" if is_error else "#009753",
+        )
+        page.overlay.append(snack)
+        snack.open = True
         page.update()
 
     def run_ai_search():
@@ -103,33 +115,42 @@ def CatalogView(page: ft.Page, nav, user_state):
 
         # Визуальный отклик
         search_field.disabled = True
-        page.snack_bar = ft.SnackBar(
+        search_field.update()
+        
+        # Индикатор загрузки
+        loading_snack = ft.SnackBar(
             content=ft.Row([ft.ProgressRing(width=20, height=20), ft.Text(" ИИ ищет информацию...")]),
             open=True
         )
+        page.overlay.append(loading_snack)
         page.update()
 
-        with next(get_db()) as db:
-            # Используем твою бизнес-логику из PlantService
-            item, err = PlantService.get_or_create_catalog_item(db, ai_service, user_id, search_val)
-            
-            if err:
-                page.snack_bar = ft.SnackBar(ft.Text(f"❌ {err}"), bgcolor="red", open=True)
-            else:
-                page.snack_bar = ft.SnackBar(
-                    ft.Text(f"✅ {item.species_name} добавлен в справочник!"), 
-                    bgcolor="#009753", 
-                    open=True
-                )
-                search_field.value = ""
-                load_catalog() # Обновляем сетку
+        try:
+            with next(get_db()) as db:
+                # 1. Вызываем сервис
+                item, err = PlantService.get_or_create_catalog_item(db, ai_service, user_id, search_val)
+                
+                # 2. ПРИНУДИТЕЛЬНЫЙ COMMIT для гарантии сохранения
+                db.commit()
 
-        search_field.disabled = False
-        page.update()
+                if err:
+                    loading_snack.open = False
+                    show_msg(f"❌ {err}", is_error=True)
+                else:
+                    loading_snack.open = False
+                    show_msg(f"✅ {item.species_name} добавлен в справочник!")
+                    search_field.value = ""
+                    # 3. Перезагружаем каталог, чтобы увидеть новую карточку
+                    load_catalog() 
+
+        except Exception as ex:
+            show_msg(f"Ошибка: {str(ex)}", is_error=True)
+        finally:
+            search_field.disabled = False
+            page.update()
 
     # --- СБОРКА VIEW ---
 
-    # Назначаем действие на Enter в поле поиска
     search_field.on_submit = lambda _: run_ai_search()
 
     view.controls.extend([
