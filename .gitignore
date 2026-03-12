@@ -1,50 +1,45 @@
-# виртуальное окружение
+# Виртуальное окружение и кэш Python
 venv/
 .venv/
 env/
-bin/
-lib/
-include/
-
-# кэш питона и линтеров
 __pycache__/
 *.py[cod]
-*$py.class
-.pytest_cache/
-.mypy_cache/
 
-# секреты и ключи api
+# База данных и файлы окружения
+*.db
+*.db-journal
+*.sqlite3
 .env
 .env.*
-!.env.example
 
-# база данных (храним только код сида, а не сам файл базы)
-*.db
-*.sqlite3
-*.db-journal
+# Изображения в корне проекта
+/*.png
+/*.jpg
+/*.jpeg
 
-# медиа файлы пользователей и отчеты
-# сохраняем структуру папок через .gitkeep, но игнорируем контент
-assets/uploads/*
-!assets/uploads/.gitkeep
-assets/reports/*
+# Изображения в ассетах и подпапках
+assets/plants/*.png
+assets/plants/*.jpg
+assets/plants/*.jpeg
+assets/*.png
+assets/*.jpg
+assets/*.jpeg
+
+# Сохранение структуры папок
+!assets/plants/.gitkeep
 !assets/reports/.gitkeep
 
-# локальные тестовые картинки
-test_*.jpg
-test_*.jpeg
-test_*.png
-
-# специфичные файлы flet и сборки pwa/android
-dist/
-build/
-__flet_build__/
-*.apk
-*.exe
-
-# системные файлы и логи
+# Отчеты и логи
+assets/reports/*
 *.log
+
+# Настройки IDE и системные файлы
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Сборка и дистрибутивы
+dist/
+build/
+__flet_build__/
