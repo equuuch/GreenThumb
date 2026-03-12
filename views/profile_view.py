@@ -23,10 +23,8 @@ def ProfileView(page: ft.Page, nav, user_state):
     def handle_complete_task(e, task_id):
         db = SessionLocal()
         try:
-            # Используем логику из CareService (Сценарий: Циклическое планирование на 30 дней)
             new_task, error = CareService.complete_task(db, task_id)
             if not error:
-                # Перезагружаем для обновления списков и дат
                 page.go("/profile") 
             else:
                 print(f"Ошибка при выполнении задачи: {error}")
@@ -40,9 +38,7 @@ def ProfileView(page: ft.Page, nav, user_state):
             if plant:
                 plant.is_active = True
                 db.commit()
-                # Генерируем календарь для восстановленного растения
                 CareService.generate_full_schedule(db, plant_id)
-                # Возвращаем на главную, чтобы увидеть результат
                 page.go("/user_home") 
         finally:
             db.close()
@@ -51,30 +47,41 @@ def ProfileView(page: ft.Page, nav, user_state):
     db = SessionLocal()
     try:
         user_data = db.query(User).filter(User.user_id == u_id).first()
-        user_name = user_data.first_name if user_data and user_data.first_name else "Илья"
+        user_name = user_data.first_name if user_data and user_data.first_name else "Пользователь"
         
-        # Загружаем растения (сортировка по добавлению)
         all_plants = db.query(Plant).filter(Plant.user_id == u_id).order_by(desc(Plant.added_at)).all()
         active_plants = [p for p in all_plants if p.is_active]
         archived_plants = [p for p in all_plants if not p.is_active]
         
-        # Загружаем ближайшие задачи (Превью календаря)
         active_ids = [p.plant_id for p in active_plants]
-        tasks = (
-            db.query(CareCalendar)
-            .options(joinedload(CareCalendar.plant)) 
-            .filter(CareCalendar.plant_id.in_(active_ids), CareCalendar.is_completed == False)
-            .order_by(asc(CareCalendar.scheduled_date))
-            .limit(3).all()
-        )
+        tasks = []
+        if active_ids:
+            tasks = (
+                db.query(CareCalendar)
+                .options(joinedload(CareCalendar.plant)) 
+                .filter(CareCalendar.plant_id.in_(active_ids), CareCalendar.is_completed == False)
+                .order_by(asc(CareCalendar.scheduled_date))
+                .limit(3).all()
+            )
         
         plants_count = len(active_plants)
-        # Безопасный расчет дней
         days_streak = (datetime.now() - user_data.created_at).days + 1 if user_data and user_data.created_at else 1
     finally:
         db.close()
 
     # --- UI: ШАПКА ПРОФИЛЯ ---
+    def stat_column(label, value):
+        return ft.Container(
+            content=ft.Column([
+                ft.Text(str(value), weight="bold", size=16, color="black"),
+                ft.Text(label, size=12, color="grey")
+            ], horizontal_alignment="center"),
+            on_click=lambda _: nav("/analytics"),
+            padding=10,
+            border_radius=10,
+            ink=True # Эффект нажатия
+        )
+
     profile_header = ft.Container(
         padding=25, bgcolor="white",
         border_radius=ft.border_radius.only(bottom_left=30, bottom_right=30),
@@ -84,7 +91,7 @@ def ProfileView(page: ft.Page, nav, user_state):
                 ft.Row([
                     ft.Container(
                         width=60, height=60, border_radius=30, bgcolor="#009753",
-                        content=ft.Text(user_name[0].upper(), color="white", weight="bold", size=20),
+                        content=ft.Text(user_name[0].upper() if user_name else "U", color="white", weight="bold", size=20),
                         alignment=ft.alignment.center
                     ),
                     ft.Column([
@@ -96,22 +103,21 @@ def ProfileView(page: ft.Page, nav, user_state):
             ]),
             ft.Divider(height=20, color="transparent"),
             ft.Row([
-                ft.Column([ft.Text(str(plants_count), weight="bold", size=16), ft.Text("Растения", size=12, color="grey")], horizontal_alignment="center"),
-                ft.Column([ft.Text(str(days_streak), weight="bold", size=16), ft.Text("Дней", size=12, color="grey")], horizontal_alignment="center"),
-                ft.Column([ft.Text("100%", weight="bold", size=16), ft.Text("Здоровье", size=12, color="grey")], horizontal_alignment="center"),
+                stat_column("Растения", plants_count),
+                stat_column("Дней", days_streak),
+                stat_column("Здоровье", "100%"),
             ], alignment=ft.MainAxisAlignment.SPACE_AROUND)
         ])
     )
 
-    # --- UI: КАЛЕНДАРЬ УХОДА (ПРЕВЬЮ) ---
+    # --- UI: КАЛЕНДАРЬ УХОДА ---
     calendar_list = ft.Column(spacing=10)
     if not tasks:
         calendar_list.controls.append(ft.Text("На сегодня задач нет ✨", size=13, color="grey", italic=True))
     else:
         for t in tasks:
             is_today = t.scheduled_date <= date.today()
-            plant_name = t.plant.custom_name if t.plant else "Растение"
-            
+            p_name = t.plant.custom_name if t.plant else "Растение"
             calendar_list.controls.append(
                 ft.Container(
                     bgcolor="#F0F4F8" if not is_today else "#E8F5E9",
@@ -119,7 +125,7 @@ def ProfileView(page: ft.Page, nav, user_state):
                     content=ft.Row([
                         ft.Icon(ft.Icons.WATER_DROP, color="#009753" if is_today else "grey700", size=20),
                         ft.Column([
-                            ft.Text(plant_name, weight="bold", size=14, color="black"),
+                            ft.Text(p_name, weight="bold", size=14, color="black"),
                             ft.Text("Нужно полить" if is_today else f"Полив {t.scheduled_date.strftime('%d.%m')}", size=12, color="grey700")
                         ], expand=True, spacing=0),
                         ft.IconButton(
@@ -131,31 +137,22 @@ def ProfileView(page: ft.Page, nav, user_state):
                 )
             )
 
-    # --- UI: СПИСКИ РАСТЕНИЙ И АРХИВ ---
+    # --- UI: СПИСКИ И АРХИВ ---
     active_list_col = ft.Column(spacing=12, visible=True)
     archive_list_col = ft.Column(spacing=12, visible=False)
 
     def create_plant_card(p, is_arc):
-        # Очистка пути (замена слэшей для отображения)
         p_img = p.image_url.replace("\\", "/") if p.image_url else None
-        
         return ft.Container(
             bgcolor="white", padding=15, border_radius=22,
             shadow=ft.BoxShadow(blur_radius=5, color=ft.Colors.BLACK12),
             content=ft.Row([
-                ft.Image(
-                    src=f"assets/{p_img}" if p_img else "assets/aloe.png", 
-                    width=50, height=50, fit="cover", border_radius=12
-                ),
+                ft.Image(src=f"assets/{p_img}" if p_img else "assets/aloe.png", width=50, height=50, fit="cover", border_radius=12),
                 ft.Column([
                     ft.Text(p.custom_name, weight="bold", color="black", size=15),
                     ft.Text("В архиве" if is_arc else (p.status_text or "Здорово"), size=12, color="grey")
                 ], expand=True, spacing=2),
-                ft.IconButton(
-                    icon=ft.Icons.UNARCHIVE_ROUNDED, 
-                    icon_color="#009753", 
-                    on_click=lambda e: restore_from_archive(e, p.plant_id)
-                ) if is_arc else ft.Icon(ft.Icons.CHEVRON_RIGHT, color="grey400")
+                ft.IconButton(ft.Icons.UNARCHIVE_ROUNDED, icon_color="#009753", on_click=lambda e: restore_from_archive(e, p.plant_id)) if is_arc else ft.Icon(ft.Icons.CHEVRON_RIGHT, color="grey400")
             ]),
             on_click=None if is_arc else lambda _: nav(f"/my_plant_details/{p.plant_id}")
         )
@@ -163,17 +160,12 @@ def ProfileView(page: ft.Page, nav, user_state):
     for p in active_plants: active_list_col.controls.append(create_plant_card(p, False))
     for p in archived_plants: archive_list_col.controls.append(create_plant_card(p, True))
 
-    # --- ТАБЫ ---
-    def on_tab_select(e):
+    def on_tab_change(e):
         active_list_col.visible = (e.control.selected_index == 0)
         archive_list_col.visible = (e.control.selected_index == 1)
         view.update()
 
-    tabs = ft.Tabs(
-        selected_index=0,
-        on_change=on_tab_select,
-        tabs=[ft.Tab(text="Мой сад"), ft.Tab(text="Архив")]
-    )
+    tabs = ft.Tabs(selected_index=0, on_change=on_tab_change, tabs=[ft.Tab(text="Мой сад"), ft.Tab(text="Архив")])
 
     # --- СБОРКА КОНТЕНТА ---
     main_content = ft.Column(
@@ -184,6 +176,19 @@ def ProfileView(page: ft.Page, nav, user_state):
             ft.Container(
                 padding=20,
                 content=ft.Column([
+                    # ИСПРАВЛЕННЫЙ БЛОК АНАЛИТИКИ (Container вместо прямого ListTile)
+                    ft.Container(
+                        content=ft.ListTile(
+                            leading=ft.Icon(ft.Icons.INSERT_CHART_ROUNDED, color="#009753"),
+                            title=ft.Text("Аналитика и графики роста", weight="bold"),
+                            subtitle=ft.Text("Посмотрите, как развиваются ваши растения"),
+                            on_click=lambda _: nav("/analytics"),
+                        ),
+                        bgcolor="white",
+                        border_radius=15,
+                        shadow=ft.BoxShadow(blur_radius=5, color=ft.Colors.BLACK12),
+                    ),
+                    ft.Container(height=10),
                     ft.Row([
                         ft.Text("Календарь ухода", size=18, weight="bold", color="black"),
                         ft.TextButton("См. всё", on_click=lambda _: nav("/calendar"))
@@ -191,10 +196,9 @@ def ProfileView(page: ft.Page, nav, user_state):
                     calendar_list,
                     ft.Container(height=10),
                     tabs,
-                    ft.Container(height=5),
                     active_list_col,
                     archive_list_col,
-                    ft.Container(height=100) # Запас снизу
+                    ft.Container(height=100) 
                 ])
             )
         ]

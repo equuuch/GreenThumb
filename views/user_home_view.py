@@ -2,6 +2,7 @@ import flet as ft
 from database.session import get_db
 from services.plant_services import PlantService
 from services.care_service import CareService
+from datetime import date
 
 def UserHomeView(page: ft.Page, nav, user_state):
     view = ft.View()
@@ -18,8 +19,40 @@ def UserHomeView(page: ft.Page, nav, user_state):
         my_plants = PlantService.get_user_plants(db, user_id)
         # Получаем задачи на сегодня
         today_tasks = CareService.get_today_tasks(db, user_id)
+        
+        # Проверка на наличие просроченных задач для индикатора уведомлений
+        # Мы просто смотрим, есть ли в базе задачи с датой < сегодня, которые не выполнены
+        from database.models import CareCalendar, Plant
+        from sqlalchemy import select
+        
+        has_alerts = db.scalar(
+            select(CareCalendar)
+            .join(Plant)
+            .where(
+                Plant.user_id == user_id,
+                CareCalendar.is_completed == False,
+                CareCalendar.scheduled_date < date.today()
+            )
+        ) is not None
 
     # --- ШАПКА ---
+    # Создаем иконку уведомлений с индикатором или без
+    notification_icon = ft.Stack([
+        ft.IconButton(
+            icon=ft.Icons.NOTIFICATIONS_OUTLINED,
+            icon_color="black",
+            on_click=lambda _: nav("/notifications") # Переход на новый экран
+        ),
+        # Если есть алерты — рисуем красную точку
+        ft.Container(
+            content=ft.CircleAvatar(bgcolor="red", radius=4),
+            alignment=ft.alignment.top_right,
+            right=5,
+            top=5,
+            visible=has_alerts # Точка видна только если есть просроченные задачи
+        )
+    ])
+
     header = ft.Row(
         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
         controls=[
@@ -27,7 +60,7 @@ def UserHomeView(page: ft.Page, nav, user_state):
                 ft.Text(f"Здравствуйте, {user_name}!", size=12, color="#6E6E6E"),
                 ft.Text("Ваш сад", size=26, weight="bold", color="black"),
             ], spacing=2),
-            ft.IconButton(icon=ft.Icons.NOTIFICATIONS_OUTLINED, icon_color="black")
+            notification_icon
         ]
     )
 
@@ -38,6 +71,7 @@ def UserHomeView(page: ft.Page, nav, user_state):
     else:
         # Показываем только первые 2 для главного экрана
         for p in my_plants[:2]:
+            # Исправляем путь: если в БД только имя файла, добавляем путь к ассетам
             img_path = f"uploads/{p.image_url}" if p.image_url else "/aloe.png"
             grid.controls.append(
                 ft.Container(

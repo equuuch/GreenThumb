@@ -15,8 +15,8 @@ from views.analytics_view import AnalyticsView
 from views.my_plant_details_view import MyPlantDetailsView
 from views.details_view import DetailsView
 from views.search_view import SearchView
-# НОВЫЙ ИМПОРТ:
 from views.calendar_view import CalendarView
+from views.notifications_view import NotificationsView
 
 # Импорт вьюхи добавления растения
 try:
@@ -73,6 +73,7 @@ def main(page: ft.Page):
         # Полная очистка стека перед созданием новой вьюхи
         page.views.clear()
         
+        # Карта индексов для NavBar
         nav_map = {"/user_home": 0, "/my_plants": 1, "/scanner": 2, "/profile": 3}
         current_index = nav_map.get(page.route, 0)
 
@@ -121,12 +122,15 @@ def main(page: ft.Page):
             elif page.route == "/profile":
                 v = ProfileView(page, navigate, USER_STATE)
 
-            # --- ДОБАВЛЕННЫЙ РОУТ ДЛЯ КАЛЕНДАРЯ ---
             elif page.route == "/calendar":
                 v = CalendarView(page, navigate, USER_STATE)
+
+            elif page.route == "/notifications":
+                v = NotificationsView(page, navigate, USER_STATE)
             
+            # ИСПРАВЛЕННЫЙ РОУТ АНАЛИТИКИ (с передачей USER_STATE)
             elif page.route == "/analytics":
-                v = AnalyticsView(page, navigate) 
+                v = AnalyticsView(page, navigate, USER_STATE) 
             
             elif page.route == "/details":
                 v = DetailsView(page, navigate)
@@ -138,8 +142,7 @@ def main(page: ft.Page):
                 v = HomeView(page, navigate)
 
             # --- ЛОГИКА NAVBAR ---
-            # Добавляем /calendar в список, где навигация может быть скрыта или показана
-            # Обычно в календаре навбар нужен, чтобы вернуться в профиль
+            # Скрываем на логине, интро и формах добавления
             hide_nav_on = ["/", "/auth", "/analytics", "/details", "/search", "/add_plant"]
             is_reference = page.route.startswith("/reference/")
             is_plant = page.route.startswith("/my_plant_details/")
