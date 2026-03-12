@@ -33,7 +33,7 @@ class Config:
 
     # медиа и оптимизация
     # корневая папка для сохранения всех загрузок
-    UPLOAD_DIR = os.path.join("assets", "uploads")
+    UPLOAD_DIR = os.path.join("assets")
 
     # максимальный размер стороны фото в пикселях для pillow
     IMAGE_MAX_SIZE = 1024
