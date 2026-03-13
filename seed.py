@@ -6,11 +6,9 @@ from database.session import init_db, SessionLocal
 from database.models import User, PlantCatalog, Plant, PlantAlias
 from werkzeug.security import generate_password_hash
 
-# Настройка пути для корректного импорта модулей
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 def seed_data():
-    # 1. Жесткая миграция: удаляем старый файл базы, чтобы применить новую схему User
     db_path = "greenthumb.db"
     if os.path.exists(db_path):
         try:
@@ -19,11 +17,9 @@ def seed_data():
         except Exception as e:
             print(f"⚠️ Не удалось удалить БД (возможно, она используется): {e}")
 
-    # Инициализируем новую БД по обновленным моделям
     init_db()
     db = SessionLocal()
 
-    # 2. Создание пользователя с поддержкой политики блокировки
     user_email = "test@mail.ru"
     hashed_password = generate_password_hash("123")
     
@@ -31,15 +27,14 @@ def seed_data():
         email=user_email, 
         password_hash=hashed_password, 
         first_name="Илья",
-        failed_login_attempts=0, # Инициализируем счетчик ошибок
-        locked_until=None         # Аккаунт изначально разблокирован
+        failed_login_attempts=0, 
+        locked_until=None         
     )
     db.add(user)
     db.commit()
     db.refresh(user)
     print(f"✅ Пользователь создан: {user_email} (пароль: 123)")
 
-    # 3. Наполнение глобального каталога (Твои данные без изменений)
     catalog_items_data = [
         {
             "species_name": "Алоэ Вера",
@@ -96,7 +91,6 @@ def seed_data():
     db.commit()
     print("✅ Каталог и Алиасы наполнены")
 
-    # 4. Добавление растений пользователю (Твои пути к картинкам сохранены)
     cats = {c.species_name: c.catalog_id for c in db.query(PlantCatalog).all()}
     
     my_plants = [

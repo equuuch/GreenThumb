@@ -22,7 +22,6 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
         if not plant:
             return ft.View(controls=[ft.Text("Растение не найдено")])
 
-        # Локальные переменные
         p_custom_name = plant.custom_name
         p_image_url = plant.image_url
         p_last_watered = plant.last_watered_at
@@ -43,7 +42,6 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
             water_val = max(0.0, min(1.0, 1.0 - (diff_sec / interval_sec)))
 
         light_val = p_user_light if p_user_light is not None else p_def_light
-        # Здоровье напрямую завязано на влагу
         health_val = 1.0 if water_val > 0.2 else 0.4
 
     # --- ЭЛЕМЕНТЫ ШКАЛЫ ---
@@ -103,7 +101,7 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
         page.bottom_sheet.open = True
         page.update()
 
-    # --- ЛОГИКА РЕДАКТИРОВАНИЯ И АРХИВАЦИИ ---
+    # --- ЛОГИКА РЕДАКТИРОВАНИЯ, АРХИВАЦИИ И УДАЛЕНИЯ ---
     def show_edit_sheet(e):
         name_input = ft.TextField(label="Название", value=p_custom_name, border_color="#009753")
         light_slider = ft.Slider(min=0, max=1, divisions=10, value=light_val, active_color="#FFC107")
@@ -130,6 +128,32 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
                     time.sleep(1)
                     nav("/my_plants")
 
+        # --- НОВАЯ ЛОГИКА УДАЛЕНИЯ ---
+        def handle_delete_click(e):
+            def final_delete(e):
+                with next(get_db()) as db:
+                    success, err = PlantService.delete_plant_permanently(db, plant_id)
+                    if success:
+                        confirm_dialog.open = False
+                        page.bottom_sheet.open = False
+                        page.snack_bar = ft.SnackBar(ft.Text("Растение безвозвратно удалено"), bgcolor="#D32F2F")
+                        page.snack_bar.open = True
+                        page.update()
+                        time.sleep(1)
+                        nav("/my_plants")
+            
+            confirm_dialog = ft.AlertDialog(
+                title=ft.Text("Удаление"),
+                content=ft.Text(f"Вы уверены, что хотите полностью удалить '{p_custom_name}'? Это действие нельзя отменить."),
+                actions=[
+                    ft.TextButton("Отмена", on_click=lambda _: setattr(confirm_dialog, "open", False)),
+                    ft.ElevatedButton("Да, удалить", bgcolor="red", color="white", on_click=final_delete),
+                ]
+            )
+            page.overlay.append(confirm_dialog)
+            confirm_dialog.open = True
+            page.update()
+
         page.bottom_sheet = ft.BottomSheet(
             ft.Container(
                 padding=30, bgcolor="white",
@@ -143,13 +167,24 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
                     ft.Text("Освещенность", size=14, color="grey"),
                     light_slider,
                     ft.ElevatedButton("Сохранить изменения", on_click=save_changes, bgcolor="#009753", color="white", width=float("inf"), height=50),
-                    ft.TextButton(
-                        icon=ft.Icons.ARCHIVE_OUTLINED,
-                        icon_color="red-400",
-                        content=ft.Text("Перенести в архив", color="red-400"),
-                        on_click=handle_archive,
-                        width=float("inf")
-                    )
+                    
+                    # Кнопки деструктивных действий
+                    ft.Row([
+                        ft.TextButton(
+                            icon=ft.Icons.ARCHIVE_OUTLINED,
+                            icon_color="blue-grey-400",
+                            content=ft.Text("В архив", color="blue-grey-400"),
+                            on_click=handle_archive,
+                            expand=True
+                        ),
+                        ft.TextButton(
+                            icon=ft.Icons.DELETE_FOREVER_OUTLINED,
+                            icon_color="red-400",
+                            content=ft.Text("Удалить", color="red-400"),
+                            on_click=handle_delete_click,
+                            expand=True
+                        ),
+                    ], spacing=10)
                 ], tight=True, spacing=15)
             )
         )
@@ -198,7 +233,6 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
         ])
 
     # --- ВЕРСТКА ---
-    # ФИКС ДЛЯ БРАУЗЕРА: убираем префикс assets/, так как он подставляется автоматически через assets_dir в ft.app
     clean_img_path = p_image_url.replace("\\", "/") if p_image_url else None
     img_src = clean_img_path if clean_img_path else "https://images.unsplash.com/photo-1453904300235-0f2f60b15b5d?w=300"
 

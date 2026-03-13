@@ -11,9 +11,8 @@ class User(Base):
     first_name = Column(String)
     created_at = Column(DateTime, server_default=func.now())
 
-    # --- Новые поля для обеспечения безопасности ---
-    failed_login_attempts = Column(Integer, default=0) # Счетчик неудачных входов
-    locked_until = Column(DateTime, nullable=True)     # Метка времени окончания блокировки
+    failed_login_attempts = Column(Integer, default=0) 
+    locked_until = Column(DateTime, nullable=True)     
 
     plants = relationship("Plant", back_populates="owner", cascade="all, delete")
     token_usages = relationship("TokenUsage", back_populates="user", cascade="all, delete")
