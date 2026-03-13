@@ -3,7 +3,7 @@ from database.session import get_db
 from services.auth_service import AuthService
 
 def AuthView(page: ft.Page, nav, user_state, is_register_mode=False):
-    # Настройка навигационной панели
+    # Прячем навигацию для экрана авторизации
     saved_navbar = None
     if page.navigation_bar:
         saved_navbar = page.navigation_bar
@@ -67,7 +67,6 @@ def AuthView(page: ft.Page, nav, user_state, is_register_mode=False):
         view.update()
 
     def handle_auth(e):
-        # Валидация
         if not email_input.value.strip() or not password_input.value.strip():
             show_msg("Заполните почту и пароль")
             return
@@ -78,21 +77,21 @@ def AuthView(page: ft.Page, nav, user_state, is_register_mode=False):
         with next(get_db()) as db:
             try:
                 if ui_state["is_login"]:
-                    # Вход
-                    user = AuthService.login(db, email_input.value.strip(), password_input.value.strip())
+                    # Вызов сервиса Входа
+                    user, err_msg = AuthService.login(db, email_input.value.strip(), password_input.value.strip())
                     if user:
                         user_state["id"] = user.user_id
                         user_state["name"] = user.first_name
                         restore_navbar_and_nav("/user_home")
                     else:
-                        show_msg("Неверная почта или пароль")
+                        show_msg(err_msg) # Здесь никогда не будет NoneType ошибки
                 else:
-                    # Регистрация
+                    # Вызов сервиса Регистрации
                     if not name_input.value.strip():
                         show_msg("Введите ваше имя")
                         return
                         
-                    user = AuthService.register(
+                    user, err_msg = AuthService.register(
                         db, 
                         email_input.value.strip(), 
                         password_input.value.strip(), 
@@ -103,7 +102,7 @@ def AuthView(page: ft.Page, nav, user_state, is_register_mode=False):
                         user_state["name"] = user.first_name
                         restore_navbar_and_nav("/user_home")
                     else:
-                        show_msg("Эта почта уже занята")
+                        show_msg(err_msg)
             except Exception as ex:
                 show_msg(f"Ошибка системы: {ex}")
             finally:

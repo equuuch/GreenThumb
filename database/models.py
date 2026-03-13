@@ -11,6 +11,10 @@ class User(Base):
     first_name = Column(String)
     created_at = Column(DateTime, server_default=func.now())
 
+    # --- Новые поля для обеспечения безопасности ---
+    failed_login_attempts = Column(Integer, default=0) # Счетчик неудачных входов
+    locked_until = Column(DateTime, nullable=True)     # Метка времени окончания блокировки
+
     plants = relationship("Plant", back_populates="owner", cascade="all, delete")
     token_usages = relationship("TokenUsage", back_populates="user", cascade="all, delete")
     consultations = relationship("AIConsultation", back_populates="user", cascade="all, delete")
@@ -55,10 +59,7 @@ class Plant(Base):
     image_url = Column(String)
     status_text = Column(String, default='healthy')
     last_watered_at = Column(DateTime)
-    
-    # НОВАЯ КОЛОНКА: Настройка света пользователем
     user_light_level = Column(Float, nullable=True)
-    
     added_at = Column(DateTime, server_default=func.now()) 
     is_active = Column(Boolean, default=True)
 
