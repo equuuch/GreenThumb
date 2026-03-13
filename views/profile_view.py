@@ -46,7 +46,6 @@ def ProfileView(page: ft.Page, nav, user_state):
         except Exception as ex:
             page.snack_bar = ft.SnackBar(ft.Text(f"Ошибка генерации: {str(ex)}"), bgcolor="red")
         
-        # Возвращаем кнопку в исходное состояние
         e.control.disabled = False
         e.control.content = None 
         page.snack_bar.open = True
@@ -75,7 +74,6 @@ def ProfileView(page: ft.Page, nav, user_state):
         finally:
             db.close()
 
-    # --- ЗАГРУЗКА ДАННЫХ ---
     db = SessionLocal()
     try:
         user_data = db.query(User).filter(User.user_id == u_id).first()
@@ -101,7 +99,6 @@ def ProfileView(page: ft.Page, nav, user_state):
     finally:
         db.close()
 
-    # --- UI КОМПОНЕНТЫ ---
     
     def stat_column(label, value):
         return ft.Container(
@@ -146,7 +143,7 @@ def ProfileView(page: ft.Page, nav, user_state):
     def create_plant_card(p, is_arc):
         p_img = p.image_url.replace("\\", "/") if p.image_url else None
         
-        # Кнопки действий в правой части карточки
+        # кнопки действий в правой части карточки
         actions = ft.Row(spacing=0)
         if is_arc:
             actions.controls.append(
@@ -157,7 +154,7 @@ def ProfileView(page: ft.Page, nav, user_state):
                 )
             )
         else:
-            # Кнопка генерации отчета
+            # кнопка генерации отчета
             actions.controls.append(
                 ft.IconButton(
                     icon=ft.Icons.PICTURE_AS_PDF_ROUNDED,
@@ -198,7 +195,7 @@ def ProfileView(page: ft.Page, nav, user_state):
         archive_list_col.visible = (e.control.selected_index == 1)
         view.update()
 
-    # ИЗМЕНЕНО: Добавлены свойства для цвета текста и индикатора вкладок
+    # Добавлены свойства для цвета текста и индикатора вкладок
     tabs = ft.Tabs(
         selected_index=0, 
         on_change=on_tab_change,
@@ -258,7 +255,7 @@ def ProfileView(page: ft.Page, nav, user_state):
                     ft.Container(height=10),
                     ft.Row([
                         ft.Text("Календарь ухода", size=18, weight="bold", color="black"),
-                        # ИЗМЕНЕНО: Добавлен стиль с зеленым цветом текста для кнопки
+                        # Добавлен стиль с зеленым цветом текста для кнопки
                         ft.TextButton(
                             "См. всё", 
                             style=ft.ButtonStyle(color="#009753"),

@@ -12,7 +12,6 @@ from .prompts import *
 
 class GigaChatService:
     def __init__(self):
-        # Настройки из центрального конфига
         self.auth_key = Config.GIGA_CREDS
         self.client_id = Config.GIGA_CLIENT_ID
         self.scope = Config.GIGA_SCOPE
@@ -36,7 +35,7 @@ class GigaChatService:
         }
         
         try:
-            # verify=False нужен, так как у Сбера часто свои сертификаты
+            # verify=False нужен, так как у Сбера свои сертификаты
             res = requests.post(url, headers=headers, data={'scope': self.scope}, verify=False)
             res.raise_for_status()
             data = res.json()

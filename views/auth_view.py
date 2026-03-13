@@ -1,15 +1,13 @@
 import flet as ft
-import time
 from database.session import get_db
 from services.auth_service import AuthService
 
 def AuthView(page: ft.Page, nav, user_state, is_register_mode=False):
-    # --- САМЫЙ ЖЕСТКИЙ И РАБОЧИЙ СПОСОБ ---
-    # Сохраняем навбар в переменную, если он есть, и удаляем его с текущей страницы
+    # Настройка навигационной панели
     saved_navbar = None
     if page.navigation_bar:
         saved_navbar = page.navigation_bar
-        page.navigation_bar = None # Полностью удаляем из структуры
+        page.navigation_bar.visible = False
         page.update()
 
     view = ft.View()
@@ -26,7 +24,6 @@ def AuthView(page: ft.Page, nav, user_state, is_register_mode=False):
         snack.open = True
         page.update()
 
-    # Вспомогательная функция для возврата навбара перед уходом
     def restore_navbar_and_nav(route):
         if saved_navbar:
             page.navigation_bar = saved_navbar
@@ -38,18 +35,21 @@ def AuthView(page: ft.Page, nav, user_state, is_register_mode=False):
         label="Имя", visible=not ui_state["is_login"], 
         border_radius=15, bgcolor="#F9F9F9", border_color="#E0E0E0", 
         focused_border_color="#009753", color="black",
-        prefix_icon=ft.Icons.PERSON_OUTLINE
+        prefix_icon=ft.Icons.PERSON_OUTLINE,
+        text_style=ft.TextStyle(font_family="Montserrat")
     )
     email_input = ft.TextField(
         label="Почта", border_radius=15, bgcolor="#F9F9F9",
         border_color="#E0E0E0", focused_border_color="#009753",
-        color="black", value="test@mail.ru", prefix_icon=ft.Icons.EMAIL_OUTLINED
+        color="black", value="test@mail.ru", prefix_icon=ft.Icons.EMAIL_OUTLINED,
+        text_style=ft.TextStyle(font_family="Montserrat")
     )
     password_input = ft.TextField(
         label="Пароль", password=True, can_reveal_password=True,
         border_radius=15, bgcolor="#F9F9F9", border_color="#E0E0E0",
         focused_border_color="#009753", color="black", value="123",
-        prefix_icon=ft.Icons.LOCK_OUTLINE
+        prefix_icon=ft.Icons.LOCK_OUTLINE,
+        text_style=ft.TextStyle(font_family="Montserrat")
     )
 
     title_txt = ft.Text(value="Авторизация" if ui_state["is_login"] else "Регистрация", size=32, weight="bold", color="black")
@@ -67,28 +67,45 @@ def AuthView(page: ft.Page, nav, user_state, is_register_mode=False):
         view.update()
 
     def handle_auth(e):
+        # Валидация
+        if not email_input.value.strip() or not password_input.value.strip():
+            show_msg("Заполните почту и пароль")
+            return
+
         login_btn.disabled = True
         page.update()
+        
         with next(get_db()) as db:
             try:
                 if ui_state["is_login"]:
-                    user = AuthService.login(db, email_input.value, password_input.value)
-                    if user:
-                        user_state["id"] = user.user_id
-                        user_state["name"] = user.first_name
-                        restore_navbar_and_nav("/user_home") # Возвращаем навбар и идем домой
-                    else:
-                        show_msg("Ошибка входа")
-                else:
-                    user = AuthService.register(db, email_input.value, password_input.value, name_input.value)
+                    # Вход
+                    user = AuthService.login(db, email_input.value.strip(), password_input.value.strip())
                     if user:
                         user_state["id"] = user.user_id
                         user_state["name"] = user.first_name
                         restore_navbar_and_nav("/user_home")
                     else:
-                        show_msg("Ошибка регистрации")
+                        show_msg("Неверная почта или пароль")
+                else:
+                    # Регистрация
+                    if not name_input.value.strip():
+                        show_msg("Введите ваше имя")
+                        return
+                        
+                    user = AuthService.register(
+                        db, 
+                        email_input.value.strip(), 
+                        password_input.value.strip(), 
+                        name_input.value.strip()
+                    )
+                    if user:
+                        user_state["id"] = user.user_id
+                        user_state["name"] = user.first_name
+                        restore_navbar_and_nav("/user_home")
+                    else:
+                        show_msg("Эта почта уже занята")
             except Exception as ex:
-                show_msg(f"Ошибка: {ex}")
+                show_msg(f"Ошибка системы: {ex}")
             finally:
                 login_btn.disabled = False
                 page.update()
