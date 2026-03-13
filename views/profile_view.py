@@ -198,9 +198,13 @@ def ProfileView(page: ft.Page, nav, user_state):
         archive_list_col.visible = (e.control.selected_index == 1)
         view.update()
 
+    # ИЗМЕНЕНО: Добавлены свойства для цвета текста и индикатора вкладок
     tabs = ft.Tabs(
         selected_index=0, 
-        on_change=on_tab_change, 
+        on_change=on_tab_change,
+        label_color="#009753",
+        unselected_label_color="grey500",
+        indicator_color="#009753",
         tabs=[ft.Tab(text="Мой сад"), ft.Tab(text="Архив")]
     )
 
@@ -254,7 +258,12 @@ def ProfileView(page: ft.Page, nav, user_state):
                     ft.Container(height=10),
                     ft.Row([
                         ft.Text("Календарь ухода", size=18, weight="bold", color="black"),
-                        ft.TextButton("См. всё", on_click=lambda _: nav("/calendar"))
+                        # ИЗМЕНЕНО: Добавлен стиль с зеленым цветом текста для кнопки
+                        ft.TextButton(
+                            "См. всё", 
+                            style=ft.ButtonStyle(color="#009753"),
+                            on_click=lambda _: nav("/calendar")
+                        )
                     ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                     calendar_list,
                     ft.Container(height=10),
