@@ -6,7 +6,11 @@ from services.plant_services import PlantService
 from services.ai_services import GigaChatService
 
 def CatalogView(page: ft.Page, nav, user_state):
-    # 1. Инициализация
+    """
+    модуль визуализации ботанического справочника.
+    реализует механизмы локального поиска и динамического расширения базы знаний через ии.
+    """
+    # 1. инициализация сервисного слоя для работы с нейросетью и идентификация сессии.
     ai_service = GigaChatService()
     user_id = user_state.get("id")
     
@@ -16,9 +20,10 @@ def CatalogView(page: ft.Page, nav, user_state):
         padding=0
     )
 
-    # --- UI-КОМПОНЕНТЫ ---
+    # --- описание ui-компонентов ---
 
-    # Сетка карточек
+    # адаптивная сетка (gridview) для отображения карточек растений. 
+    # автоматически пересчитывает количество колонок в зависимости от ширины экрана.
     catalog_grid = ft.GridView(
         expand=True,
         runs_count=2,
@@ -28,7 +33,8 @@ def CatalogView(page: ft.Page, nav, user_state):
         run_spacing=15,
     )
 
-    # Состояние "Пусто"
+    # декларативное описание состояния «пустой выдачи».
+    # содержит призыв к действию (cta) для инициирования поиска через нейросеть.
     empty_state = ft.Column([
         ft.Container(height=40),
         ft.Icon(ft.Icons.SEARCH_OFF_ROUNDED, size=50, color="grey"),
@@ -41,7 +47,7 @@ def CatalogView(page: ft.Page, nav, user_state):
         )
     ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, visible=False)
 
-    # Поле поиска
+    # компонент текстового ввода для реализации «живого» поиска по локальной базе.
     search_field = ft.TextField(
         hint_text="Найти растение...",
         expand=True,
@@ -50,18 +56,22 @@ def CatalogView(page: ft.Page, nav, user_state):
         border_color="transparent",
         height=45,
         content_padding=ft.padding.only(left=15),
+        # триггер реактивного обновления списка при каждом изменении текста.
         on_change=lambda e: load_catalog(e.control.value),
     )
 
-    # --- ЛОГИКА ---
+    # --- блок программной логики ---
 
     def create_card(item):
-        """Создает карточку растения"""
+        """
+        фабрика визуальных компонентов карточек.
+        преобразует объект модели sqlalchemy в интерактивный контейнер flet.
+        """
         return ft.Container(
             bgcolor="white",
             border_radius=20,
             padding=12,
-            ink=True,
+            ink=True, # включение эффекта «чернильного пятна» при нажатии.
             on_click=lambda e, cid=item.catalog_id: nav(f"/reference_detail/{cid}"),
             shadow=ft.BoxShadow(blur_radius=15, color=ft.Colors.with_opacity(0.05, "black")),
             content=ft.Column([
@@ -81,25 +91,30 @@ def CatalogView(page: ft.Page, nav, user_state):
         )
 
     def load_catalog(query=""):
-        """Загрузка и фильтрация списка из локальной БД"""
+        """
+        алгоритм выборки и фильтрации данных. 
+        взаимодействует с базой данных sqlite через orm-запросы.
+        """
         catalog_grid.controls.clear()
         with next(get_db()) as db:
-            # Делаем свежий запрос к базе
+            # выполнение структурированного запроса с сортировкой по названию.
             stmt = select(PlantCatalog).order_by(PlantCatalog.species_name)
             items = db.scalars(stmt).all()
             
+            # реализация клиентской фильтрации по вхождению подстроки.
             filtered = [i for i in items if query.lower() in i.species_name.lower()]
             
             for item in filtered:
                 catalog_grid.controls.append(create_card(item))
             
+            # реактивное управление видимостью состояния «пусто».
             empty_state.visible = len(catalog_grid.controls) == 0
         
         if page:
-            page.update()
+            page.update() # принудительная синхронизация ui.
 
     def show_msg(text, is_error=False):
-        """Новый способ отображения SnackBar"""
+        """метод вывода системных оповещений."""
         snack = ft.SnackBar(
             content=ft.Text(text),
             bgcolor="red" if is_error else "#009753",
@@ -109,15 +124,18 @@ def CatalogView(page: ft.Page, nav, user_state):
         page.update()
 
     def run_ai_search():
-        """Поиск через GigaChat и автоматическое добавление в каталог"""
+        """
+        интеграционный алгоритм взаимодействия с gigachat api.
+        отвечает за генерацию технического паспорта растения и автоматическое внесение в бд.
+        """
         search_val = search_field.value.strip()
         if not search_val: return
 
-        # Визуальный отклик
+        # визуальная блокировка интерфейса для предотвращения race condition.
         search_field.disabled = True
         search_field.update()
         
-        # Индикатор загрузки
+        # отображение индикатора выполнения длительной сетевой операции.
         loading_snack = ft.SnackBar(
             content=ft.Row([ft.ProgressRing(width=20, height=20), ft.Text(" ИИ ищет информацию...")]),
             open=True
@@ -127,10 +145,10 @@ def CatalogView(page: ft.Page, nav, user_state):
 
         try:
             with next(get_db()) as db:
-                # 1. Вызываем сервис
+                # вызов метода сервисного слоя, инкапсулирующего логику промптов и парсинга json.
                 item, err = PlantService.get_or_create_catalog_item(db, ai_service, user_id, search_val)
                 
-                # 2. ПРИНУДИТЕЛЬНЫЙ COMMIT для гарантии сохранения
+                # принудительная фиксация транзакции для записи нового вида в глобальный справочник.
                 db.commit()
 
                 if err:
@@ -140,16 +158,17 @@ def CatalogView(page: ft.Page, nav, user_state):
                     loading_snack.open = False
                     show_msg(f"✅ {item.species_name} добавлен в справочник!")
                     search_field.value = ""
-                    # 3. Перезагружаем каталог, чтобы увидеть новую карточку
+                    # актуализация списка для отображения новой записи без перезагрузки страницы.
                     load_catalog() 
 
         except Exception as ex:
             show_msg(f"Ошибка: {str(ex)}", is_error=True)
         finally:
+            # возврат интерфейса в интерактивное состояние.
             search_field.disabled = False
             page.update()
 
-    # --- СБОРКА VIEW ---
+    # --- сборка иерархии вьюхи ---
 
     search_field.on_submit = lambda _: run_ai_search()
 
@@ -163,6 +182,7 @@ def CatalogView(page: ft.Page, nav, user_state):
                 on_click=lambda _: nav("/user_home")
             )
         ),
+        # контейнер поисковой панели.
         ft.Container(
             padding=20,
             bgcolor="white",
@@ -176,6 +196,7 @@ def CatalogView(page: ft.Page, nav, user_state):
                 )
             ])
         ),
+        # основной контейнер данных с поддержкой адаптивного скролла.
         ft.Container(
             content=ft.Column([
                 empty_state,
@@ -186,6 +207,7 @@ def CatalogView(page: ft.Page, nav, user_state):
         )
     ])
 
+    # первичная загрузка данных при инициализации модуля.
     load_catalog()
 
     return view

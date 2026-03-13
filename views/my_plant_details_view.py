@@ -7,14 +7,21 @@ import time
 from services.plant_services import PlantService
 
 def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
+    """
+    модуль детальной информации о растении пользователя.
+    реализует логику отображения метрик состояния, редактирования данных и управления жизненным циклом экземпляра.
+    """
     view = ft.View()
     view.route = f"/my_plant_details/{plant_id}"
     view.bgcolor = "white"
     view.padding = 0
 
-    # 1. ЗАГРУЗКА ДАННЫХ ИЗ БД
+    # 1. блок извлечения данных из реляционной базы данных.
     with next(get_db()) as db:
+        # принудительное обновление объектов сессии для исключения использования устаревшего кэша.
         db.expire_all() 
+        # выполнение запроса с использованием joinedload (eager loading) для оптимизации: 
+        # связанные справочные данные загружаются одним sql-запросом.
         plant = db.query(Plant).options(
             joinedload(Plant.catalog_info)
         ).filter(Plant.plant_id == plant_id).first()
@@ -22,6 +29,7 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
         if not plant:
             return ft.View(controls=[ft.Text("Растение не найдено")])
 
+        # извлечение параметров экземпляра и метаданных вида из каталога.
         p_custom_name = plant.custom_name
         p_image_url = plant.image_url
         p_last_watered = plant.last_watered_at
@@ -33,28 +41,36 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
         p_def_interval = cat_info.default_watering_interval if (cat_info and cat_info.default_watering_interval) else 3
         p_def_light = cat_info.default_light_level if cat_info else 0.5
 
-        # --- МАТЕМАТИКА ВЛАГИ ---
+        # --- алгоритм расчета уровня влажности ---
+        # вычисляет остаточный процент влаги на основе времени, прошедшего с момента последнего полива.
         interval_days = p_def_interval
         water_val = 0.5 
         if p_last_watered:
             interval_sec = interval_days * 24 * 3600
             diff_sec = (datetime.now() - p_last_watered).total_seconds()
+            # нормирование значения в диапазоне [0.0, 1.0] для визуализации в прогресс-баре.
             water_val = max(0.0, min(1.0, 1.0 - (diff_sec / interval_sec)))
 
+        # приоритетное использование пользовательской настройки освещенности над эталонной.
         light_val = p_user_light if p_user_light is not None else p_def_light
+        # упрощенный расчет индекса здоровья на основе критического порога влаги.
         health_val = 1.0 if water_val > 0.2 else 0.4
 
-    # --- ЭЛЕМЕНТЫ ШКАЛЫ ---
+    # --- инициализация компонентов визуальной шкалы ---
+    # расчет веса контейнеров (expand) для имитации заполнения шкалы (пропорция 100).
     current_fill_weight = int(water_val * 100)
     water_bar_fill = ft.Container(
+        # динамическое изменение цвета: зеленый (норма), желтый (предупреждение), красный (критично).
         bgcolor="#009753" if water_val > 0.6 else "#FFC107" if water_val > 0.3 else "#FF5252",
         height=10, expand=max(1, current_fill_weight), border_radius=5,
-        animate=ft.animation.Animation(800, ft.AnimationCurve.DECELERATE)
+        animate=ft.animation.Animation(800, ft.AnimationCurve.DECELERATE) # плавная анимация при изменении.
     )
     water_bar_empty = ft.Container(expand=100 - max(1, current_fill_weight))
 
-    # --- ЛОГИКА ДОБАВЛЕНИЯ ЗАМЕРА ---
+    # --- логика взаимодействия через модальные окна (bottom sheets) ---
+
     def open_growth_sheet(e):
+        """метод отрисовки интерфейса фиксации физического прогресса растения."""
         height_input = ft.TextField(
             label="Высота (см)", 
             keyboard_type=ft.KeyboardType.NUMBER,
@@ -64,6 +80,7 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
         note_input = ft.TextField(label="Заметка", multiline=True)
 
         def save_measurement(e):
+            """обработчик сохранения замера. интегрирует данные в журнал роста (growth_logs)."""
             if not height_input.value:
                 height_input.error_text = "Введите высоту"
                 page.update()
@@ -72,17 +89,19 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
             try:
                 h_val = float(height_input.value.replace(",", "."))
                 with next(get_db()) as db:
+                    # вызов метода сервиса для атомарной записи данных и обновления статуса растения.
                     log, err = PlantService.add_measurement(
                         db=db, plant_id=plant_id, height=h_val, note=note_input.value
                     )
                     if err: return
                 
+                # закрытие интерфейса ввода и визуальное подтверждение операции.
                 page.bottom_sheet.open = False
                 page.snack_bar = ft.SnackBar(ft.Text("Замер успешно добавлен!"), bgcolor="#009753")
                 page.snack_bar.open = True
                 page.update()
                 time.sleep(0.5)
-                nav("/analytics")
+                nav("/analytics") # переход в раздел графиков для визуализации тренда.
             except ValueError:
                 height_input.error_text = "Нужно число"
                 page.update()
@@ -101,12 +120,13 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
         page.bottom_sheet.open = True
         page.update()
 
-    # --- ЛОГИКА РЕДАКТИРОВАНИЯ, АРХИВАЦИИ И УДАЛЕНИЯ ---
     def show_edit_sheet(e):
+        """модуль управления конфигурацией и жизненным циклом растения."""
         name_input = ft.TextField(label="Название", value=p_custom_name, border_color="#009753")
         light_slider = ft.Slider(min=0, max=1, divisions=10, value=light_val, active_color="#FFC107")
 
         def save_changes(e):
+            """фиксация изменений метаданных растения в базе данных."""
             with next(get_db()) as db:
                 plant_db = db.query(Plant).filter(Plant.plant_id == plant_id).first()
                 if plant_db:
@@ -118,6 +138,7 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
             nav(f"/my_plant_details/{plant_id}") 
 
         def handle_archive(e):
+            """логика «мягкого» удаления: перевод растения в архив и отмена будущих задач."""
             with next(get_db()) as db:
                 success, err = PlantService.archive_plant(db, plant_id, reason="убрано пользователем")
                 if success:
@@ -128,10 +149,11 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
                     time.sleep(1)
                     nav("/my_plants")
 
-        # --- НОВАЯ ЛОГИКА УДАЛЕНИЯ ---
         def handle_delete_click(e):
+            """процедура безвозвратного удаления данных и физических файлов изображений."""
             def final_delete(e):
                 with next(get_db()) as db:
+                    # вызов метода сервиса для удаления записи и очистки файловой системы.
                     success, err = PlantService.delete_plant_permanently(db, plant_id)
                     if success:
                         confirm_dialog.open = False
@@ -142,6 +164,7 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
                         time.sleep(1)
                         nav("/my_plants")
             
+            # реализация паттерна подтверждения (confirmation dialog) для деструктивных действий.
             confirm_dialog = ft.AlertDialog(
                 title=ft.Text("Удаление"),
                 content=ft.Text(f"Вы уверены, что хотите полностью удалить '{p_custom_name}'? Это действие нельзя отменить."),
@@ -154,6 +177,7 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
             confirm_dialog.open = True
             page.update()
 
+        # сборка интерфейса редактирования в формате выплывающей панели.
         page.bottom_sheet = ft.BottomSheet(
             ft.Container(
                 padding=30, bgcolor="white",
@@ -168,7 +192,7 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
                     light_slider,
                     ft.ElevatedButton("Сохранить изменения", on_click=save_changes, bgcolor="#009753", color="white", width=float("inf"), height=50),
                     
-                    # Кнопки деструктивных действий
+                    # блок кнопок управления статусом.
                     ft.Row([
                         ft.TextButton(
                             icon=ft.Icons.ARCHIVE_OUTLINED,
@@ -191,16 +215,20 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
         page.bottom_sheet.open = True
         page.update()
 
-    # --- ОБРАБОТЧИК ПОЛИВА ---
+    # --- обработка процедур ухода ---
+
     def handle_watering(e):
-        e.control.disabled = True
+        """метод подтверждения выполнения задачи полива. синхронизирует состояние бд и ui."""
+        e.control.disabled = True # предотвращение дублирования транзакций.
         e.control.content = ft.ProgressRing(width=20, height=20, color="white", stroke_width=2)
         page.update()
 
         with next(get_db()) as db:
             plant_db = db.query(Plant).filter(Plant.plant_id == plant_id).first()
             if plant_db:
+                # обновление временной метки последнего ухода.
                 plant_db.last_watered_at = datetime.now()
+                # поиск и закрытие соответствующей записи в календаре задач.
                 task = db.query(CareCalendar).filter(
                     CareCalendar.plant_id == plant_id,
                     CareCalendar.task_type == "watering",
@@ -211,6 +239,7 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
                     task.completion_date = datetime.now()
                 db.commit()
 
+        # реактивное обновление визуальных шкал после завершения транзакции.
         water_bar_fill.expand = 100
         water_bar_fill.bgcolor = "#009753"
         page.snack_bar = ft.SnackBar(ft.Text("Растение полито!"), bgcolor="#009753")
@@ -219,10 +248,11 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
         time.sleep(1.2)
         nav("/my_plants")
 
-    # --- ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ СТАТОВ ---
     def create_stat(label, icon, val, custom_fill=None, custom_empty=None):
+        """универсальный визуальный компонент для рендеринга метрик со шкалой прогресса."""
         color = "#009753" if val > 0.6 else "#FFC107" if val > 0.3 else "#FF5252"
         safe_val = max(1, int(val * 100))
+        # использование механизма expand для пропорционального деления ширины контейнера.
         fill = custom_fill if custom_fill else ft.Container(bgcolor=color, height=10, expand=safe_val, border_radius=5)
         empty = custom_empty if custom_empty else ft.Container(expand=100 - safe_val)
 
@@ -232,10 +262,12 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
             ft.Container(height=10)
         ])
 
-    # --- ВЕРСТКА ---
-    clean_img_path = p_image_url.replace("\\", "/") if p_image_url else None
-    img_src = clean_img_path if clean_img_path else "https://images.unsplash.com/photo-1453904300235-0f2f60b15b5d?w=300"
+    # --- финальная компоновка визуальной структуры (layout) ---
 
+    clean_img_path = p_image_url.replace("\\", "/") if p_image_url else None
+    img_src = clean_img_path if clean_img_path else "aloe.png"
+
+    # шапка экрана: использование Stack для наложения кнопок навигации на медиа-контент.
     header = ft.Stack([
         ft.Image(src=img_src, fit=ft.ImageFit.COVER, width=400, height=400),
         ft.Container(
@@ -247,6 +279,7 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
         )
     ])
 
+    # основной контейнер информации с использованием эффекта перекрытия (отрицательный margin).
     content = ft.Container(
         bgcolor="white", padding=ft.padding.all(30),
         border_radius=ft.border_radius.only(top_left=35, top_right=35),
@@ -258,11 +291,13 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
                     ft.Text(p_custom_name, size=28, weight="bold"),
                     ft.Text(p_species_name, size=16, color="grey600"),
                 ]),
+                # визуальный бейдж текущего статуса физического развития.
                 ft.Container(content=ft.Text(p_status, size=10, color="white"), bgcolor="#009753", padding=8, border_radius=10)
             ], alignment="spaceBetween"),
             
             ft.Divider(height=40, color="transparent"),
             
+            # рендеринг динамических шкал состояния.
             create_stat("Уровень влаги", ft.Icons.WATER_DROP_OUTLINED, water_val, water_bar_fill, water_bar_empty),
             create_stat("Состояние здоровья", ft.Icons.FAVORITE_OUTLINE, health_val),
             create_stat("Уровень света", ft.Icons.WB_SUNNY_OUTLINED, light_val),
@@ -278,6 +313,7 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
                 margin=ft.margin.only(top=10, bottom=10)
             ),
 
+            # основной элемент управления для подтверждения полива.
             ft.ElevatedButton(
                 content=ft.Text("Отметить полив", size=16, weight="bold"),
                 bgcolor="#009753", color="white", height=55, width=float("inf"),
@@ -287,5 +323,6 @@ def MyPlantDetailsView(page: ft.Page, nav, plant_id, user_state):
         ], scroll=ft.ScrollMode.ADAPTIVE)
     )
 
+    # результирующая сборка вьюхи в единый прокручиваемый список.
     view.controls.append(ft.ListView([header, content], expand=True, padding=0))
     return view

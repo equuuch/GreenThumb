@@ -7,38 +7,45 @@ from datetime import datetime
 import os
 
 def MyPlantsView(page: ft.Page, nav, user_state):
+    """
+    модуль визуализации персональной коллекции растений пользователя.
+    реализует логику отображения сетки объектов с динамическим расчетом статусов ухода.
+    """
     view = ft.View()
     view.route = "/my_plants"
     view.bgcolor = "#F9F9F9"
     view.padding = 0 
 
-    # Берем ID текущего пользователя из стейта
+    # идентификация текущего пользователя для фильтрации данных в sql-запросе.
     user_id = user_state.get("id") or 1
 
-    # 1. ЗАГРУЗКА ДАННЫХ
+    # 1. блок синхронизации данных с базой данных.
     with next(get_db()) as db:
+        # принудительный сброс локального кэша сессии для получения актуального состояния из бд.
         db.expire_all()
         my_plants = (
             db.query(Plant)
+            # оптимизация производительности: загрузка связанных данных каталога через join за один запрос.
             .options(joinedload(Plant.catalog_info))
             .filter(Plant.user_id == user_id, Plant.is_active == 1)
             .all()
         )
+        # технический аудит путей к медиафайлам в консоль разработчика.
         for p in my_plants:
             print(f"DEBUG: {p.custom_name} | Path in DB: {p.image_url}")
 
-    # Логика цвета индикаторов (0.5+ зеленый, 0.2+ желтый, меньше — красный)
     def get_status_color(val):
-        # Если значение строго больше 0.5 (например, 0.51 и выше) — зеленый
+        """
+        логический маппер для цветовой индикации состояния параметров (вода/свет/здоровье).
+        реализует классическую схему светофора на основе нормализованного значения [0..1].
+        """
         if val > 0.5: 
-            return "#009753"  # Зеленый
-        # Если значение от 0.2 до 0.5 включительно — желтый
+            return "#009753"  # зеленый: состояние в норме.
         if val >= 0.2: 
-            return "#FFC107"  # Желтый
-        # Все что меньше 0.2 — красный
-        return "#FF5252"             # Красный
+            return "#FFC107"  # желтый: требуется внимание пользователя.
+        return "#FF5252"      # красный: критический уровень.
 
-    # 2. ШАПКА ЭКРАНА
+    # 2. построение верхней панели навигации и управления.
     header = ft.Container(
         padding=ft.padding.only(left=20, right=20, top=40, bottom=10),
         content=ft.Row([
@@ -66,39 +73,47 @@ def MyPlantsView(page: ft.Page, nav, user_state):
         ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
     )
 
-    # 3. ФУНКЦИЯ СОЗДАНИЯ КАРТОЧКИ
+    # 3. описание фабричного метода создания карточки растения.
     def create_plant_card(plant_obj):
-        # ИСПРАВЛЕННЫЙ ПУТЬ:
+        """
+        модуль формирования интерактивного компонента карточки.
+        включает препроцессинг путей и расчет метрик жизнедеятельности.
+        """
         if plant_obj.image_url:
-            # 1. Чистим от префикса assets/ и приводим к прямым слешам для Flet
+            # нормализация пути: удаление системного префикса и коррекция слешей для кроссплатформенности.
             img_path = plant_obj.image_url.replace("assets/", "").replace("\\", "/")
             
-            # 2. Проверка на диске (нормализуем путь под Windows для os.path.exists)
+            # верификация физического наличия файла на диске перед попыткой рендеринга.
             full_path_on_disk = os.path.normpath(os.path.join("assets", img_path))
             if not os.path.exists(full_path_on_disk):
                 print(f"❌ ОШИБКА: Файл не найден по пути: {full_path_on_disk}")
         else:
+            # использование внешнего url-заглушки при отсутствии локального изображения.
             img_path = "https://images.unsplash.com/photo-1453904300235-0f2f60b15b5d?q=80&w=300"
         
         cat = plant_obj.catalog_info
         water_val = 0.0
 
-        # Расчет влажности
+        # расчет индекса влажности на основе даты последнего полива и интервала из справочника.
         if plant_obj.last_watered_at and cat and cat.default_watering_interval:
             diff_seconds = (datetime.now() - plant_obj.last_watered_at).total_seconds()
             interval_seconds = cat.default_watering_interval * 24 * 3600
             
             if diff_seconds < 60:
-                water_val = 1.0
+                water_val = 1.0 # состояние полной увлажненности сразу после действия.
             else:
+                # линейная аппроксимация высыхания субстрата.
                 water_val = max(0.0, min(1.0, 1.0 - (diff_seconds / interval_seconds)))
         elif plant_obj.last_watered_at:
             water_val = 0.8
         
-        # Уровень света (из настроек пользователя или дефолт каталога)
+        # определение уровня освещенности: кастомное значение пользователя имеет приоритет над эталонным.
         light_val = plant_obj.user_light_level if plant_obj.user_light_level is not None else (cat.default_light_level if cat else 0.5)
+        
+        # расчет интегрального показателя здоровья на основе порога влажности.
         health_val = 1.0 if water_val > 0.2 else 0.4
 
+        # сборка визуального контейнера с применением теней и скруглений.
         return ft.Container(
             bgcolor="white", 
             border_radius=25,
@@ -107,13 +122,15 @@ def MyPlantsView(page: ft.Page, nav, user_state):
                 color=ft.Colors.with_opacity(0.1, "black"),
                 offset=ft.Offset(0, 5)
             ),
+            # настройка адаптивности: количество колонок меняется в зависимости от ширины вьюпорта (breakpoints).
             col={"xs": 6, "sm": 6, "md": 3, "lg": 2}, 
             on_click=lambda _: nav(f"/my_plant_details/{plant_obj.plant_id}"),
             content=ft.Column(
                 spacing=0,
                 controls=[
+                    # верхняя часть карточки: визуальный контент.
                     ft.Container(
-                        aspect_ratio=1.0,
+                        aspect_ratio=1.0, # сохранение квадратных пропорций для симметрии сетки.
                         content=ft.Image(
                             src=img_path, 
                             fit=ft.ImageFit.COVER, 
@@ -121,6 +138,7 @@ def MyPlantsView(page: ft.Page, nav, user_state):
                             error_content=ft.Icon(ft.Icons.IMAGE_NOT_SUPPORTED, color="grey300")
                         )
                     ),
+                    # нижняя часть карточки: информационные индикаторы.
                     ft.Container(
                         padding=ft.padding.only(left=15, right=15, top=12, bottom=15),
                         content=ft.Column(
@@ -135,6 +153,7 @@ def MyPlantsView(page: ft.Page, nav, user_state):
                                     overflow=ft.TextOverflow.ELLIPSIS,
                                     font_family="Montserrat"
                                 ),
+                                # строка статусных иконок с динамической сменой цвета.
                                 ft.Row([
                                     ft.Icon(ft.Icons.WATER_DROP, size=18, color=get_status_color(water_val)),
                                     ft.Icon(ft.Icons.WB_SUNNY, size=18, color=get_status_color(light_val)),
@@ -147,9 +166,10 @@ def MyPlantsView(page: ft.Page, nav, user_state):
             )
         )
 
-    # Основная сетка
+    # инициализация адаптивной сетки на базе responsiverow.
     grid = ft.ResponsiveRow(spacing=15, run_spacing=15)
     
+    # реализация логики отображения пустого состояния (empty state) при отсутствии данных в коллекции.
     if not my_plants:
         grid.controls.append(
             ft.Container(
@@ -165,10 +185,11 @@ def MyPlantsView(page: ft.Page, nav, user_state):
             )
         )
     else:
+        # наполнение сетки сгенерированными карточками.
         for p in my_plants:
             grid.controls.append(create_plant_card(p))
 
-    # Формируем итоговый вид
+    # итоговая компоновка вьюхи в единый вертикальный список со скроллом.
     view.controls.append(
         ft.ListView(
             controls=[

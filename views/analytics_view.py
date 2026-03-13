@@ -5,42 +5,57 @@ from sqlalchemy import select
 import traceback
 
 def AnalyticsView(page: ft.Page, nav, user_state):
+    """
+    модуль визуализации аналитических данных. 
+    отвечает за построение графиков динамики роста и вывод истории физических замеров.
+    """
     view = ft.View()
     view.route = "/analytics"
     view.bgcolor = "#F9F9F9"
-    # Прячем системный скролл, чтобы не было полосы справа
+    # отключение системного скролла для реализации кастомной области прокрутки в истории.
     view.scroll = ft.ScrollMode.HIDDEN 
 
+    # безопасное извлечение идентификатора пользователя из глобального состояния приложения.
     try:
         u_id = int(user_state.get("id", 0))
     except (ValueError, TypeError):
         u_id = 0
     
+    # инициализация контейнеров для динамического контента: графика и списка истории.
     chart_container = ft.Container(expand=True)
     history_container = ft.Column(spacing=10, scroll=ft.ScrollMode.ADAPTIVE, expand=True)
     
+    # локальное состояние для управления визуальным выделением выбранных записей.
     state = {"selected_card": None}
 
     def on_log_click(e):
+        """обработчик события нажатия на карточку замера для визуальной индикации выбора."""
         if state["selected_card"]:
+            # сброс стиля предыдущей выбранной карточки.
             state["selected_card"].bgcolor = "white"
             state["selected_card"].border = None
             state["selected_card"].update()
         
+        # применение активного стиля (зеленая обводка и прозрачный фон) к новому элементу.
         e.control.bgcolor = ft.Colors.with_opacity(0.1, "#009753")
         e.control.border = ft.border.all(2, "#009753")
         state["selected_card"] = e.control
         e.control.update()
 
     def update_chart(e=None):
+        """
+        основная функция обновления данных. 
+        выполняет запрос к бд, рассчитывает координаты точек и перерисовывает график.
+        """
         selected_plant_id = plant_dropdown.value
         db_inner = SessionLocal()
         data_points = []
-        max_y = 10.0
+        max_y = 10.0 # базовое ограничение оси y для пустых данных.
         history_container.controls.clear()
 
         try:
-            # Загружаем логи
+            # формирование sql-запроса через sqlalchemy select. 
+            # поддерживается фильтрация по конкретному id растения или выборка всех логов пользователя.
             query = select(GrowthLog).order_by(GrowthLog.measured_at.desc())
             if selected_plant_id and selected_plant_id != "all":
                 query = query.where(GrowthLog.plant_id == int(selected_plant_id))
@@ -50,27 +65,29 @@ def AnalyticsView(page: ft.Page, nav, user_state):
             logs = db_inner.scalars(query).all()
 
             if logs:
+                # сортировка логов по дате для корректного отображения линии времени на графике.
                 sorted_logs = sorted(logs, key=lambda x: x.measured_at)
                 for i, log in enumerate(sorted_logs):
                     val = round(float(log.height), 1) if log.height else 0.0
                     
-                    # Настраиваем стиль всплывающей подсказки (тултипа)
+                    # создание точки данных с настройкой всплывающей подсказки (tooltip).
                     data_points.append(
                         ft.LineChartDataPoint(
                             x=float(i + 1), 
                             y=val,
                             tooltip=f"{val}", 
                             tooltip_style=ft.TextStyle(
-                                color=ft.colors.WHITE, # Белый текст
+                                color=ft.colors.WHITE, 
                                 size=14,
                                 weight=ft.FontWeight.BOLD
                             )
                         )
                     )
                     
+                    # динамическое определение максимального значения для масштабирования сетки графика.
                     if val > max_y: max_y = val + 10.0
                 
-                # Заполняем историю
+                # итеративное заполнение списка истории замеров (последние 10 записей).
                 history_container.controls.append(ft.Text("История замеров:", weight="bold", size=16))
                 for log in logs[:10]:
                     fmt_h = f"{float(log.height):.1f}"
@@ -90,6 +107,7 @@ def AnalyticsView(page: ft.Page, nav, user_state):
                         )
                     )
 
+            # рендеринг компонента ft.LineChart при наличии данных.
             if not data_points:
                 chart_container.content = ft.Text("Нет данных для отображения", color="grey")
             else:
@@ -98,9 +116,9 @@ def AnalyticsView(page: ft.Page, nav, user_state):
                         data_points=data_points,
                         stroke_width=3,
                         color="#009753",
-                        curved=True,
+                        curved=True, # включение сглаживания линии графика.
                         point=True,
-                        below_line_bgcolor=ft.Colors.with_opacity(0.1, "#009753"),
+                        below_line_bgcolor=ft.Colors.with_opacity(0.1, "#009753"), # заливка области под графиком.
                     )],
                     left_axis=ft.ChartAxis(
                         labels=[ft.ChartAxisLabel(value=float(i), label=ft.Text(str(i), size=11, color="grey")) 
@@ -119,16 +137,17 @@ def AnalyticsView(page: ft.Page, nav, user_state):
                     max_y=float(max_y),
                     expand=True,
                     interactive=True, 
-                    tooltip_bgcolor="#009753" # Зеленый фон плашки
+                    tooltip_bgcolor="#009753" 
                 )
             page.update()
         except Exception as ex:
+            # логирование ошибок обработки данных для отладки.
             traceback.print_exc()
             print(f"Ошибка в AnalyticsView: {ex}")
         finally:
             db_inner.close()
 
-    # Дропдаун с растениями
+    # загрузка списка растений пользователя для инициализации выпадающего списка фильтрации.
     db = SessionLocal()
     plant_options = [ft.dropdown.Option(key="all", text="Все растения")]
     try:
@@ -138,29 +157,31 @@ def AnalyticsView(page: ft.Page, nav, user_state):
     finally:
         db.close()
 
+    # конфигурация компонента выбора растения (Dropdown).
     plant_dropdown = ft.Dropdown(
         label="Растение",
         options=plant_options, value="all",
         on_change=update_chart,
         border_radius=15, bgcolor="white",
         prefix_icon=ft.Icons.SEARCH,
-        focused_border_color="#009753", # Зеленая обводка при клике
-        focused_color="#009753"         # Зеленый текст лейбла при клике
+        focused_border_color="#009753", 
+        focused_color="#009753"         
     )
 
-    # --- AppBar с ЧЕРНОЙ кнопкой назад ---
+    # построение верхней панели навигации (AppBar).
     view.controls.append(
         ft.AppBar(
             title=ft.Text("Аналитика"), 
             bgcolor="white",
             leading=ft.IconButton(
                 icon=ft.Icons.ARROW_BACK_IOS_NEW_ROUNDED,
-                icon_color=ft.Colors.BLACK, # Кнопка стала черной
+                icon_color=ft.Colors.BLACK,
                 on_click=lambda _: page.go("/user_home")
             )
         )
     )
     
+    # информационный блок с рекомендацией для пользователя (UX hint).
     info_hint = ft.Container(
         content=ft.Row([
             ft.Icon(ft.Icons.INFO_OUTLINE, color=ft.colors.BLUE_GREY_400, size=22),
@@ -177,6 +198,7 @@ def AnalyticsView(page: ft.Page, nav, user_state):
         margin=ft.padding.only(top=15, bottom=5)
     )
     
+    # сборка основного содержимого в единую колонку с отступами.
     view.controls.append(
         ft.Container(
             padding=20, expand=True,
@@ -186,6 +208,7 @@ def AnalyticsView(page: ft.Page, nav, user_state):
                 ft.Container(height=10),
                 plant_dropdown,
                 ft.Container(height=15),
+                # контейнер графика с эффектом тени и скруглениями.
                 ft.Container(
                     content=chart_container,
                     bgcolor="white", 
@@ -201,5 +224,6 @@ def AnalyticsView(page: ft.Page, nav, user_state):
         )
     )
 
+    # первичный вызов обновления для отрисовки графика при открытии экрана.
     update_chart()
     return view

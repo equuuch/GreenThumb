@@ -14,7 +14,6 @@ from views.reference_view import ReferenceView
 from views.reference_detail_view import ReferenceDetailView
 from views.analytics_view import AnalyticsView
 from views.my_plant_details_view import MyPlantDetailsView
-from views.details_view import DetailsView
 from views.search_view import SearchView
 from views.calendar_view import CalendarView
 from views.notifications_view import NotificationsView
@@ -139,8 +138,6 @@ def main(page: ft.Page):
             elif current_route == "/analytics":
                 v = AnalyticsView(page, navigate, USER_STATE)
                 
-            elif current_route == "/details":
-                v = DetailsView(page, navigate)
 
             elif current_route in ["/", ""]:
                 v = HomeView(page, navigate)

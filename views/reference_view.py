@@ -3,19 +3,24 @@ from database.session import get_db
 from database.models import PlantCatalog
 
 def ReferenceView(page: ft.Page, nav, catalog_id, user_state):
-    # Создаем вьюху и сразу задаем ей роут
+    """
+    модуль детального отображения информации из ботанического справочника.
+    реализует логику визуализации эталонных данных вида и адаптивное управление доступом.
+    """
+    # инициализация объекта вьюхи с привязкой уникального динамического маршрута.
     view = ft.View(
         route=f"/reference/{catalog_id}",
         bgcolor="white",
         padding=0
     )
 
-    # 1. Загрузка данных из БД по ID
+    # 1. этап взаимодействия с уровнем доступа к данным (dal).
     with next(get_db()) as db:
-        # Пытаемся получить объект из базы по первичному ключу
+        # получение объекта растения из глобального каталога по первичному ключу.
+        # использование метода get обеспечивает эффективный поиск по индексированному полю.
         plant = db.get(PlantCatalog, int(catalog_id))
 
-    # Если растение не найдено (защита от ошибок)
+    # реализация защитного программирования: обработка случая отсутствия данных в бд.
     if not plant:
         view.controls.append(
             ft.AppBar(title=ft.Text("Ошибка"), bgcolor="white")
@@ -28,18 +33,20 @@ def ReferenceView(page: ft.Page, nav, catalog_id, user_state):
         )
         return view
 
-    # Логика подбора локальной картинки по названию
+    # алгоритм подбора графического контента. 
+    # сопоставляет текстовый идентификатор вида с локальными статическими ресурсами.
     name_lower = plant.species_name.lower()
-    img_src = "/aloe.png" # Картинка по умолчанию
+    img_src = "/aloe.png" # ресурс по умолчанию (fallback).
     if "роза" in name_lower: img_src = "/rose.png"
     elif "петрушка" in name_lower: img_src = "/petrushka.png"
     elif "гибискус" in name_lower or "gib" in name_lower: img_src = "/gib.png"
 
-    # Шапка с картинкой и кнопкой назад
+    # формирование графического заголовка. 
+    # использование stack позволяет наложить навигационную кнопку поверх изображения.
     image_header = ft.Container(
         height=320,
         border_radius=ft.border_radius.only(bottom_left=35, bottom_right=35),
-        clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+        clip_behavior=ft.ClipBehavior.ANTI_ALIAS, # обрезка контента по радиусу скругления.
         content=ft.Stack([
             ft.Image(
                 src=img_src, 
@@ -47,13 +54,13 @@ def ReferenceView(page: ft.Page, nav, catalog_id, user_state):
                 width=1000, 
                 height=320
             ),
-            # Кнопка возврата
+            # контейнер кнопки возврата с эффектом полупрозрачного фона (стекломорфизм).
             ft.Container(
                 content=ft.IconButton(
                     ft.Icons.ARROW_BACK_IOS_NEW, 
                     icon_color="black",
                     icon_size=18,
-                    on_click=lambda _: page.on_view_pop(None) 
+                    on_click=lambda _: page.on_view_pop(None) # вызов системного метода возврата по стеку.
                 ),
                 left=20, 
                 top=40, 
@@ -65,8 +72,11 @@ def ReferenceView(page: ft.Page, nav, catalog_id, user_state):
         ])
     )
 
-    # Вспомогательный виджет для карточек с инфой
     def stat_box(icon, label, value):
+        """
+        вспомогательный метод построения информационных блоков.
+        реализует переиспользование ui-компонентов для визуализации характеристик.
+        """
         return ft.Container(
             padding=15, 
             bgcolor="#F7F9F8", 
@@ -79,10 +89,11 @@ def ReferenceView(page: ft.Page, nav, catalog_id, user_state):
             ], horizontal_alignment="center", spacing=2)
         )
 
-    # Проверка статуса пользователя
+    # проверка состояния авторизации для изменения бизнес-логики кнопки действия.
     is_guest = user_state.get("id") is None
     
-    # Кнопка действия
+    # декларативное описание основной кнопки действия (cta).
+    # свойства кнопки (текст, цвет, навигация) зависят от текущего контекста пользователя.
     action_btn = ft.ElevatedButton(
         text="Добавить в мой сад" if not is_guest else "Войдите, чтобы добавить",
         bgcolor="#009753" if not is_guest else "#E0E0E0",
@@ -93,11 +104,11 @@ def ReferenceView(page: ft.Page, nav, catalog_id, user_state):
         on_click=lambda _: nav("/auth") if is_guest else nav("/scanner")
     )
 
-    # Текстовая информация
+    # построение информационного блока с текстовым описанием и характеристиками.
     info_section = ft.Container(
         padding=ft.padding.only(left=25, right=25, top=20, bottom=40),
         content=ft.Column([
-            # Названия
+            # секция заголовков вида.
             ft.Row([
                 ft.Column([
                     ft.Text(plant.species_name, size=28, weight="bold", color="black"),
@@ -108,7 +119,7 @@ def ReferenceView(page: ft.Page, nav, catalog_id, user_state):
             
             ft.Container(height=10),
             
-            # Ряд с характеристиками
+            # визуализация интервалов полива и требований к свету.
             ft.Row([
                 stat_box(ft.Icons.WATER_DROP, "Полив", f"{plant.default_watering_interval} дн."),
                 stat_box(ft.Icons.WB_SUNNY, "Свет", "Яркий" if (plant.default_light_level or 0) > 0.7 else "Средний"),
@@ -116,24 +127,25 @@ def ReferenceView(page: ft.Page, nav, catalog_id, user_state):
             
             ft.Container(height=15),
             
-            # Секция описания
+            # блок ботанического описания.
             ft.Text("ОПИСАНИЕ", size=12, weight="bold", color="#9E9E9E"),
             ft.Text(
                 plant.description or "Для этого растения описание пока не добавлено.", 
                 color="#424242", 
                 size=15,
-                # ИСПРАВЛЕНО: используем TextStyle для задания высоты строки
+                # настройка межстрочного интервала для повышения удобочитаемости текста.
                 style=ft.TextStyle(height=1.4) 
             ),
             
             ft.Container(height=25),
             
-            # Кнопка
+            # интеграция кнопки в основную колонку.
             action_btn
         ], spacing=10)
     )
 
-    # Добавляем всё в список со скроллом
+    # результирующая сборка вьюхи. 
+    # использование listview гарантирует работоспособность интерфейса на экранах с малой высотой.
     view.controls.append(
         ft.ListView(
             [image_header, info_section], 
