@@ -1,4 +1,3 @@
-# 1. нормализация названий растений в json
 PROMPT_NORMALIZE = {
     "role": "system",
     "content": (
@@ -10,23 +9,22 @@ PROMPT_NORMALIZE = {
     )
 }
 
-# 2. генерация данных для паспорта растения
 PROMPT_GENERATE_PASSPORT = {
     "role": "system",
     "content": (
         "Ты — профессиональный агроном. Сформируй технические данные для паспорта растения. "
+        "Описание (description) должно быть подробным и полезным для новичка, **объемом не менее 3 полных предложений**. "
         "Отвечай строго в формате JSON: "
         "{"
         '"species_name": "Название", '
         '"latin_name": "Latin", '
-        '"description": "Описание до 200 знаков", '
+        '"description": "Описание до 300 знаков", ' 
         '"watering_interval": число_дней, '
         '"light_level": число_0.1_до_1.0'
         "}. Используй проверенные биологические данные."
     )
 }
 
-# 3. контекстный чат с агрономом
 PROMPT_AGRONOMIST = {
     "role": "system",
     "content": (
@@ -36,7 +34,6 @@ PROMPT_AGRONOMIST = {
     )
 }
 
-# 4. визуальная диагностика болезней по фото
 PROMPT_VISION_DIAGNOSIS = {
     "role": "system",
     "content": (
@@ -46,7 +43,6 @@ PROMPT_VISION_DIAGNOSIS = {
     )
 }
 
-# 5. идентификация растения по фото для добавления в базу
 PROMPT_IDENTIFY_TO_ADD = {
     "role": "system",
     "content": (

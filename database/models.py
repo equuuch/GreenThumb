@@ -11,6 +11,9 @@ class User(Base):
     first_name = Column(String)
     created_at = Column(DateTime, server_default=func.now())
 
+    failed_login_attempts = Column(Integer, default=0) 
+    locked_until = Column(DateTime, nullable=True)     
+
     plants = relationship("Plant", back_populates="owner", cascade="all, delete")
     token_usages = relationship("TokenUsage", back_populates="user", cascade="all, delete")
     consultations = relationship("AIConsultation", back_populates="user", cascade="all, delete")
@@ -19,9 +22,8 @@ class TokenUsage(Base):
     __tablename__ = "token_usage"
     token_usage_id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
-    model_name = Column(String)
     tokens_count = Column(Integer)
-    request_type = Column(String)
+    request_type = Column(String) 
     created_at = Column(DateTime, server_default=func.now())
 
     user = relationship("User", back_populates="token_usages")
@@ -50,18 +52,21 @@ class Plant(Base):
     __tablename__ = "plants"
     plant_id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
-    catalog_id = Column(Integer, ForeignKey("plant_catalog.catalog_id"), nullable=False)
+    catalog_id = Column(Integer, ForeignKey("plant_catalog.catalog_id"), nullable=True)
+    
     custom_name = Column(String)
     image_url = Column(String)
-    file_id = Column(String)
     status_text = Column(String, default='healthy')
     last_watered_at = Column(DateTime)
+    user_light_level = Column(Float, nullable=True)
+    added_at = Column(DateTime, server_default=func.now()) 
     is_active = Column(Boolean, default=True)
 
     owner = relationship("User", back_populates="plants")
     catalog_info = relationship("PlantCatalog", back_populates="plants_instances")
     growth_logs = relationship("GrowthLog", back_populates="plant", cascade="all, delete")
     calendar_tasks = relationship("CareCalendar", back_populates="plant", cascade="all, delete")
+    consultations = relationship("AIConsultation", back_populates="plant", cascade="all, delete")
 
 class CareCalendar(Base):
     __tablename__ = "care_calendar"
@@ -79,6 +84,8 @@ class GrowthLog(Base):
     log_id = Column(Integer, primary_key=True, autoincrement=True)
     plant_id = Column(Integer, ForeignKey("plants.plant_id", ondelete="CASCADE"), nullable=False)
     height = Column(Numeric, nullable=False)
+    note = Column(Text) 
+    image_path = Column(String) 
     measured_at = Column(Date, server_default=func.current_date())
 
     plant = relationship("Plant", back_populates="growth_logs")
@@ -88,9 +95,10 @@ class AIConsultation(Base):
     consultation_id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
     plant_id = Column(Integer, ForeignKey("plants.plant_id", ondelete="CASCADE"), nullable=True)
-    session_id = Column(String)
-    role = Column(String) 
-    message_text = Column(Text, nullable=False)
+    prompt_text = Column(Text, nullable=False)
+    response_text = Column(Text, nullable=False)
+    consultation_type = Column(String) 
     created_at = Column(DateTime, server_default=func.now())
 
     user = relationship("User", back_populates="consultations")
+    plant = relationship("Plant", back_populates="consultations")

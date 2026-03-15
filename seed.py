@@ -1,89 +1,125 @@
-import json
-from database.session import SessionLocal, init_db
-from database.models import PlantCatalog, PlantAlias
+import sys
+import os
+from datetime import datetime, timedelta 
+from sqlalchemy.orm import Session
+from database.session import init_db, SessionLocal
+from database.models import User, PlantCatalog, Plant, PlantAlias
+from werkzeug.security import generate_password_hash
 
-INITIAL_PLANTS = [
-    {
-        "species_name": "Ландыш",
-        "latin_name": "Convallaria majalis",
-        "description": "Травянистое цветковое растение с ароматными белыми колокольчатыми цветками.",
-        "default_watering_interval": 7,
-        "default_light_level": 0.5,
-        "aliases": ["ландыш", "конваллярия", "ландыш майский", "колокольчики", "лесной колокольчик"]
-    },
-    {
-        "species_name": "Монстера Деликатесная",
-        "latin_name": "Monstera deliciosa",
-        "description": "Крупная лиана с характерными перфорированными листьями. Любит влажность.",
-        "default_watering_interval": 10,
-        "default_light_level": 0.6,
-        "aliases": ["монстера", "монстера привлекательная", "дырявый цветок", "монстера деликатесная", "филодендрон дырявый"]
-    },
-    {
-        "species_name": "Сансевиерия",
-        "latin_name": "Sansevieria trifasciata",
-        "description": "Неприхотливое растение, известное как 'Щучий хвост'. Выдерживает тень.",
-        "default_watering_interval": 21,
-        "default_light_level": 0.3,
-        "aliases": ["тещин язык", "щучий хвост", "санса", "сансивьерия", "змеиная кожа", "меч", "индийский меч"]
-    },
-    {
-        "species_name": "Томат Черри",
-        "latin_name": "Solanum lycopersicum",
-        "description": "Скороспелый сорт для домашнего и садового выращивания. Требует много света.",
-        "default_watering_interval": 3,
-        "default_light_level": 0.9,
-        "aliases": ["помидорки", "черри", "томаты", "вишневидный томат", "черри на подоконнике", "помидорчики"]
-    },
-    {
-        "species_name": "Фикус Бенджамина",
-        "latin_name": "Ficus benjamina",
-        "description": "Популярное комнатное дерево с мелкими листьями. Чувствителен к перестановке.",
-        "default_watering_interval": 7,
-        "default_light_level": 0.7,
-        "aliases": ["фикус", "бенджамин", "фикус бенджамина", "плакучее дерево", "фикус мелколистный"]
-    },
-    {
-        "species_name": "Алоэ Вера",
-        "latin_name": "Aloe barbadensis",
-        "description": "Суккулент с целебными свойствами. Хранит запас влаги в толстых листьях.",
-        "default_watering_interval": 14,
-        "default_light_level": 0.8,
-        "aliases": ["алоэ", "столетник", "алое", "лекарственный алоэ", "алоэ вера", "доктор"]
-    }
-]
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-def seed_database():
+def seed_data():
+    db_path = "greenthumb.db"
+    if os.path.exists(db_path):
+        try:
+            os.remove(db_path)
+            print("🧹 Старая база данных удалена для обновления структуры")
+        except Exception as e:
+            print(f"⚠️ Не удалось удалить БД (возможно, она используется): {e}")
+
     init_db()
     db = SessionLocal()
+
+    user_email = "test@mail.ru"
+    hashed_password = generate_password_hash("123")
     
-    try:
-        for plant_data in INITIAL_PLANTS:
-            exists = db.query(PlantCatalog).filter_by(species_name=plant_data["species_name"]).first()
-            if not exists:
-                new_plant = PlantCatalog(
-                    species_name=plant_data["species_name"],
-                    latin_name=plant_data["latin_name"],
-                    description=plant_data["description"],
-                    default_watering_interval=plant_data["default_watering_interval"],
-                    default_light_level=plant_data["default_light_level"]
-                )
-                db.add(new_plant)
-                db.flush()
-                
-                for alias_name in plant_data["aliases"]:
-                    new_alias = PlantAlias(
-                        user_input=alias_name.lower(),
-                        catalog_id=new_plant.catalog_id
-                    )
-                    db.add(new_alias)
+    user = User(
+        email=user_email, 
+        password_hash=hashed_password, 
+        first_name="Илья",
+        failed_login_attempts=0, 
+        locked_until=None         
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    print(f"✅ Пользователь создан: {user_email} (пароль: 123)")
+
+    catalog_items_data = [
+        {
+            "species_name": "Алоэ Вера",
+            "latin_name": "Aloe barbadensis miller",
+            "description": "Популярный суккулент с мясистыми колючими листьями ценится за свои уникальные лечебные свойства. Растение эффективно очищает воздух в помещении и требует минимального внимания со стороны владельца. Оно отлично переносит засуху, но совершенно не терпит избыточного полива и застоя влаги у корней.",
+            "default_watering_interval": 14,
+            "default_light_level": 0.8,
+            "aliases": ["алоэ", "столетник", "алое"]
+        },
+        {
+            "species_name": "Петрушка",
+            "latin_name": "Petroselinum crispum",
+            "description": "Неприхотливая пряная трава является незаменимым источником витаминов и ярким украшением домашнего подоконника. Культура крайне нуждается в регулярном увлажнении почвы и хорошем освещении для быстрого роста зелени. Молодые листья можно употреблять в пищу уже через несколько недель после появления первых всходов.",
+            "default_watering_interval": 3,
+            "default_light_level": 0.7,
+            "aliases": ["петрушка кудрявая", "зелень"]
+        },
+        {
+            "species_name": "Роза",
+            "latin_name": "Rosa chinensis",
+            "description": "Элегантная миниатюрная роза была специально выведена для успешного выращивания в условиях обычных городских квартир. Это растение требует строгого соблюдения режима полива и очень чувствительно к уровню влажности воздуха. Для обильного и продолжительного цветения ей необходимо обеспечить яркий рассеянный солнечный свет.",
+            "default_watering_interval": 5,
+            "default_light_level": 0.9,
+            "aliases": ["роза комнатная"]
+        },
+        {
+            "species_name": "Гибискус",
+            "latin_name": "Hibiscus rosa-sinensis",
+            "description": "Красивое вечнозеленое дерево более известно среди цветоводов под поэтичным названием китайская роза. Крупные яркие бутоны живут всего один день, но при правильном уходе новые цветы появляются постоянно. Растение очень любит теплое пространство и активно развивается в просторных горшках с хорошим дренажем.",
+            "default_watering_interval": 4,
+            "default_light_level": 0.8,
+            "aliases": ["китайская роза", "гибискус"]
+        }
+    ]
+
+    for item_data in catalog_items_data:
+        new_cat = PlantCatalog(
+            species_name=item_data["species_name"],
+            latin_name=item_data["latin_name"],
+            description=item_data["description"],
+            default_watering_interval=item_data["default_watering_interval"],
+            default_light_level=item_data["default_light_level"]
+        )
+        db.add(new_cat)
+        db.flush()
         
-        db.commit()
-    except Exception as e:
-        db.rollback()
-        print(f"Error: {e}")
-    finally:
-        db.close()
+        for alias_text in item_data.get("aliases", []):
+            new_alias = PlantAlias(
+                user_input=alias_text.lower(),
+                catalog_id=new_cat.catalog_id
+            )
+            db.add(new_alias)
+
+    db.commit()
+    print("✅ Каталог и Алиасы наполнены")
+
+    cats = {c.species_name: c.catalog_id for c in db.query(PlantCatalog).all()}
+    
+    my_plants = [
+        Plant(
+            user_id=user.user_id,
+            catalog_id=cats.get("Алоэ Вера"),
+            custom_name="Алоэ Вера",
+            image_url="plants/aloe.png",
+            last_watered_at=datetime.now() - timedelta(days=2),
+            user_light_level=0.9,  
+            status_text="Рост: 15.0 см",
+            is_active=True
+        ),
+        Plant(
+            user_id=user.user_id,
+            catalog_id=cats.get("Петрушка"),
+            custom_name="Петрушка",
+            image_url="plants/petrushka.png",
+            last_watered_at=datetime.now(),
+            user_light_level=0.4,  
+            status_text="Рост: 10.5 см",
+            is_active=True
+        )
+    ]
+    db.add_all(my_plants)
+    db.commit()
+    print(f"✅ В личный сад добавлено {len(my_plants)} растений")
+
+    db.close()
 
 if __name__ == "__main__":
-    seed_database()
+    seed_data()

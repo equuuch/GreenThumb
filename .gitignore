@@ -1,29 +1,45 @@
-# виртуальное окружение
+# Виртуальное окружение и кэш Python
 venv/
 .venv/
 env/
-bin/
-lib/
-include/
-
-# кэш питона
 __pycache__/
 *.py[cod]
-*$py.class
 
-# секреты
-.env
-
+# База данных и файлы окружения
 *.db
+*.db-journal
 *.sqlite3
+.env
+.env.*
 
-# медиа файлы пользователей
-assets/uploads/*
-!assets/uploads/.gitkeep
+# Изображения в корне проекта
+/*.png
+/*.jpg
+/*.jpeg
 
-# системные файлы и логи
+# Изображения в ассетах и подпапках
+assets/plants/*.png
+assets/plants/*.jpg
+assets/plants/*.jpeg
+assets/*.png
+assets/*.jpg
+assets/*.jpeg
+
+# Сохранение структуры папок
+!assets/plants/.gitkeep
+!assets/reports/.gitkeep
+
+# Отчеты и логи
+assets/reports/*
 *.log
+
+# Настройки IDE и системные файлы
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Сборка и дистрибутивы
+dist/
+build/
+__flet_build__/
